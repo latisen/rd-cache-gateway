@@ -49,6 +49,10 @@ def get_recent_logs(limit: int = 300) -> list[dict[str, Any]]:
         return list(_BUFFER)[-bounded:]
 
 
+def get_log_view_html(logs_path: str = "/logs") -> str:
+    return _HTML.replace("__LOGS_PATH__", logs_path)
+
+
 _HTML = """<!doctype html>
 <html>
 <head>
@@ -73,7 +77,7 @@ _HTML = """<!doctype html>
     const statusEl = document.getElementById('status');
     async function refresh() {
       try {
-        const response = await fetch('/logs?limit=500', { cache: 'no-store' });
+        const response = await fetch('__LOGS_PATH__?limit=500', { cache: 'no-store' });
         const data = await response.json();
         logEl.textContent = data.entries.map(x => x.formatted).join('\n');
         statusEl.textContent = 'live';

@@ -34,6 +34,14 @@ def test_healthz_and_empty_qbit_list(tmp_path, monkeypatch):
     assert info.status_code == 200
     assert info.json() == []
 
+    debug_status = client.get("/debug/status")
+    assert debug_status.status_code == 200
+    assert debug_status.json()["status"] == "ok"
+
+    debug_live = client.get("/debug/live")
+    assert debug_live.status_code == 200
+    assert "rd-cache-gateway live log" in debug_live.text
+
 
 def test_falls_back_when_data_dir_is_not_writable(tmp_path, monkeypatch):
     locked = tmp_path / "locked-data"

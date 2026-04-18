@@ -145,6 +145,25 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
+  name: rd-cache-gateway-internal
+  namespace: automation-system
+spec:
+  type: ClusterIP
+  selector:
+    app: rd-cache-gateway
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
+    - name: debug
+      protocol: TCP
+      port: 8888
+      targetPort: 8888
+---
+apiVersion: v1
+kind: Service
+metadata:
   name: rd-cache-gateway
   namespace: automation-system
 spec:

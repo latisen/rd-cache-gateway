@@ -9,7 +9,7 @@ from urllib.parse import unquote, urljoin, urlparse
 
 import requests
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from app.api_qbit import (
     build_categories,
@@ -24,7 +24,7 @@ from app.api_qbit import (
 )
 from app.config import get_settings
 from app.jobs_store import JobStore
-from app.live_log import LiveLogServer, get_recent_logs, install_live_log_handler
+from app.live_log import LiveLogServer, get_log_view_html, get_recent_logs, install_live_log_handler
 from app.models import (
     CreateJobRequest,
     CreateJobResponse,
@@ -309,6 +309,25 @@ async def log_http_requests(request: Request, call_next):
 @app.get("/debug/logs")
 def debug_logs(limit: int = 300) -> dict:
     return {"entries": get_recent_logs(limit)}
+
+
+@app.get("/debug/live", response_class=HTMLResponse)
+def debug_live() -> str:
+    return get_log_view_html("/debug/logs")
+
+
+@app.get("/debug/status")
+def debug_status() -> dict:
+    return {
+        "status": "ok",
+        "jobs_file": str(store.jobs_file),
+        "staging_root": str(settings.staging_root),
+        "visible_staging_root": str(settings.visible_staging_root),
+        "debrid_all_dir": str(settings.debrid_all_dir),
+        "poller_enabled": settings.enable_poller,
+        "debug_ui_enabled": settings.enable_debug_ui,
+        "debug_web_port": settings.debug_web_port,
+    }
 
 
 @app.get("/healthz", response_model=HealthResponse)
