@@ -111,11 +111,23 @@ class JobPoller:
                     self.settings.visible_staging_root,
                 )
                 expected_media_size = extract_expected_media_size(info, source_file)
-                ready, reason, details = check_staging_ready(
+                host_ready, host_reason, host_details = check_staging_ready(
                     staging_path,
                     expected_media_size,
                     self.settings.import_stability_min_bytes,
                 )
+                visible_ready, visible_reason, visible_details = check_staging_ready(
+                    visible_file,
+                    expected_media_size,
+                    self.settings.import_stability_min_bytes,
+                )
+
+                ready = host_ready and visible_ready
+                reason = "ready" if ready else (visible_reason if not visible_ready else host_reason)
+                details = {
+                    "host": host_details,
+                    "visible": visible_details,
+                }
 
                 patch.update(
                     {

@@ -251,6 +251,56 @@ def test_poller_marks_downloaded_job_ready_for_arr_using_media_file_size(tmp_pat
     assert payload[0]["content_path"].endswith(media_file.name)
 
 
+def test_visible_arr_symlink_is_created_for_sonarr_import(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    debrid_root = tmp_path / "debrid"
+    debrid_root.mkdir(parents=True, exist_ok=True)
+    media_file = debrid_root / "Below.Deck.Down.Under.S03E13.Lipstick.Service.1080p.mkv"
+    media_file.write_bytes(b"x" * (2 * 1024 * 1024))
+
+    main.store.replace_all(
+        {
+            "rdvisible": {
+                "torrent_id": "rdvisible",
+                "rd_torrent_id": "rdvisible",
+                "filename": media_file.name,
+                "status": "downloading",
+                "category": "sonarr",
+                "raw": {},
+            }
+        }
+    )
+
+    monkeypatch.setattr(main.rd_client, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        main.rd_client,
+        "torrent_info",
+        lambda torrent_id: {
+            "id": torrent_id,
+            "status": "downloaded",
+            "filename": media_file.name,
+            "bytes": 2 * 1024 * 1024,
+            "files": [
+                {
+                    "path": f"/{media_file.name}",
+                    "bytes": 2 * 1024 * 1024,
+                    "selected": 1,
+                }
+            ],
+        },
+    )
+
+    main.poller.poll_once()
+
+    job = main.store.get("rdvisible")
+    assert job is not None
+    assert Path(job["staging_path"]).is_symlink()
+    assert Path(job["arr_file_path"]).is_symlink()
+    assert Path(job["arr_file_path"]).resolve() == media_file.resolve()
+
+
+
 def test_poller_uses_client_hash_as_download_client_id(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 

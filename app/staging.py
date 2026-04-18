@@ -96,6 +96,16 @@ def extract_expected_media_size(info: dict, source_file: Path) -> int | None:
     return None
 
 
+def _refresh_symlink(link_path: Path, source_file: Path) -> Path:
+    link_path.parent.mkdir(parents=True, exist_ok=True)
+    if link_path.exists() or link_path.is_symlink():
+        link_path.unlink()
+    link_target = os.path.relpath(str(source_file), start=str(link_path.parent))
+    link_path.symlink_to(link_target, target_is_directory=False)
+    return link_path
+
+
+
 def create_staging_symlink(
     torrent_id: str,
     source_file: Path,
@@ -104,34 +114,33 @@ def create_staging_symlink(
 ) -> tuple[Path, Path, Path]:
     folder_name = stage_folder_name(torrent_id, source_file)
     host_dir = staging_root / folder_name
-    host_dir.mkdir(parents=True, exist_ok=True)
-
-    link_path = host_dir / source_file.name
-    if link_path.exists() or link_path.is_symlink():
-        link_path.unlink()
-    link_target = os.path.relpath(str(source_file), start=str(host_dir))
-    link_path.symlink_to(link_target, target_is_directory=False)
-
     visible_dir = visible_root / folder_name
-    visible_file = visible_dir / source_file.name
+
+    link_path = _refresh_symlink(host_dir / source_file.name, source_file)
+    visible_file = _refresh_symlink(visible_dir / source_file.name, source_file)
+
     return link_path, visible_dir, visible_file
 
 
-def cleanup_staging_for_job(torrent_id: str, staging_root: Path) -> None:
-    candidates = [staging_root / torrent_id, *staging_root.glob(f"*-{torrent_id}")]
-    seen: set[Path] = set()
+def cleanup_staging_for_job(torrent_id: str, staging_root: Path, visible_root: Path | None = None) -> None:
+    roots = [staging_root]
+    if visible_root is not None:
+        roots.append(visible_root)
 
-    for job_dir in candidates:
-        if job_dir in seen or not job_dir.exists():
-            continue
-        seen.add(job_dir)
-        for child in job_dir.iterdir():
-            if child.is_symlink() or child.is_file():
-                child.unlink(missing_ok=True)
-        try:
-            job_dir.rmdir()
-        except OSError:
-            pass
+    seen: set[Path] = set()
+    for root in roots:
+        candidates = [root / torrent_id, *root.glob(f"*-{torrent_id}")]
+        for job_dir in candidates:
+            if job_dir in seen or not job_dir.exists():
+                continue
+            seen.add(job_dir)
+            for child in job_dir.iterdir():
+                if child.is_symlink() or child.is_file():
+                    child.unlink(missing_ok=True)
+            try:
+                job_dir.rmdir()
+            except OSError:
+                pass
 
 
 def check_staging_ready(

@@ -413,7 +413,7 @@ def qbit_torrents_delete(
         )
 
         if _boolish(deleteFiles):
-            cleanup_staging_for_job(resolved_id, settings.staging_root)
+            cleanup_staging_for_job(resolved_id, settings.staging_root, settings.visible_staging_root)
 
         rd_id = job.get("rd_torrent_id") or resolved_id
         if rd_client.is_configured():
