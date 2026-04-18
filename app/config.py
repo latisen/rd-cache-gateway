@@ -24,6 +24,8 @@ class Settings:
     radarr_url: str | None
     radarr_api_key: str | None
     enable_poller: bool
+    enable_debug_ui: bool
+    debug_web_port: int
 
     @property
     def jobs_file(self) -> Path:
@@ -70,4 +72,6 @@ def get_settings() -> Settings:
         radarr_url=os.getenv("RADARR_URL"),
         radarr_api_key=os.getenv("RADARR_API_KEY"),
         enable_poller=_env_bool("ENABLE_POLLER", bool(rd_token)),
+        enable_debug_ui=_env_bool("ENABLE_DEBUG_UI", True),
+        debug_web_port=max(1, int(os.getenv("DEBUG_WEB_PORT", "8888"))),
     )

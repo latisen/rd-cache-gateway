@@ -11,6 +11,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UVICORN_HOST=0.0.0.0 \
     UVICORN_PORT=8000 \
     UVICORN_WORKERS=1 \
+    ENABLE_DEBUG_UI=1 \
+    DEBUG_WEB_PORT=8888 \
     APP_UID=1000 \
     APP_GID=1000
 
@@ -33,7 +35,7 @@ RUN groupadd --gid 1000 appuser \
 
 USER appuser
 
-EXPOSE 8000
+EXPOSE 8000 8888
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS http://127.0.0.1:${UVICORN_PORT}/healthz || exit 1

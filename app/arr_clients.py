@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 import requests
 
 from app.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 class ArrClient:
@@ -25,6 +28,7 @@ class ArrClient:
     def refresh_monitored_downloads(self) -> dict[str, Any]:
         if not self.is_configured():
             return {"skipped": True, "reason": "not_configured"}
+        logger.info("ARR refresh monitored downloads client=%s", self.name)
         if self.name != "sonarr":
             return {"skipped": True, "reason": "not_supported_for_category"}
         response = requests.post(
@@ -39,6 +43,7 @@ class ArrClient:
     def trigger_scan(self, folder: Path, download_id: str) -> dict[str, Any]:
         if not self.is_configured():
             return {"skipped": True, "reason": "not_configured"}
+        logger.info("ARR trigger scan client=%s path=%s download_id=%s", self.name, folder, download_id)
 
         name = "DownloadedEpisodesScan" if self.name == "sonarr" else "DownloadedMoviesScan"
         payload = {

@@ -58,6 +58,40 @@ def test_falls_back_when_data_dir_is_not_writable(tmp_path, monkeypatch):
     assert "rd-cache-gateway-data" in str(main.store.jobs_file)
 
 
+def test_add_http_url_fetches_remote_torrent_for_sonarr(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    monkeypatch.setattr(main, "resolve_add_url", lambda url: {"kind": "torrent_file", "content": b"dummy", "filename": "remote.torrent"})
+    monkeypatch.setattr(main, "rd_add_torrent_file_bytes", lambda content, filename=None: "rdurl")
+    monkeypatch.setattr(main, "rd_select_all_files", lambda torrent_id: None)
+    monkeypatch.setattr(
+        main,
+        "fetch_rd_info_raw",
+        lambda torrent_id: {
+            "id": torrent_id,
+            "status": "queued",
+            "filename": "Example.Release.S01E01.1080p.mkv",
+            "bytes": 123456789,
+            "files": [],
+        },
+    )
+
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/v2/torrents/add",
+        data={"urls": "https://indexer.example/file.torrent", "category": "sonarr"},
+    )
+
+    assert response.status_code == 200
+    assert response.text == "Ok."
+
+    info = client.get("/api/v2/torrents/info")
+    payload = info.json()
+    assert len(payload) == 1
+    assert payload[0]["name"] == "Example.Release.S01E01.1080p.mkv"
+
+
+
 def test_add_magnet_persists_job_in_configured_data_dir(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 class RealDebridClient:
@@ -30,6 +33,7 @@ class RealDebridClient:
         return response.json()
 
     def add_magnet(self, magnet_uri: str) -> str:
+        logger.info("RD add magnet")
         response = requests.post(
             f"{self.BASE_URL}/torrents/addMagnet",
             headers=self._headers(),
@@ -45,6 +49,7 @@ class RealDebridClient:
         return str(torrent_id)
 
     def add_torrent_file(self, content: bytes, filename: str | None = None) -> str:
+        logger.info("RD add torrent file filename=%s bytes=%s", filename or "upload.torrent", len(content))
         response = requests.post(
             f"{self.BASE_URL}/torrents/addTorrent",
             headers=self._headers(),
@@ -60,6 +65,7 @@ class RealDebridClient:
         return str(torrent_id)
 
     def select_all_files(self, torrent_id: str) -> None:
+        logger.info("RD select all files torrent_id=%s", torrent_id)
         response = requests.post(
             f"{self.BASE_URL}/torrents/selectFiles/{torrent_id}",
             headers=self._headers(),
@@ -70,6 +76,7 @@ class RealDebridClient:
             raise RuntimeError(f"RD selectFiles failed: {response.status_code} {response.text}")
 
     def torrent_info(self, torrent_id: str) -> dict[str, Any]:
+        logger.info("RD poll torrent_id=%s", torrent_id)
         response = requests.get(
             f"{self.BASE_URL}/torrents/info/{torrent_id}",
             headers=self._headers(),
@@ -80,6 +87,7 @@ class RealDebridClient:
         return response.json()
 
     def delete_torrent(self, torrent_id: str) -> None:
+        logger.info("RD delete torrent_id=%s", torrent_id)
         response = requests.delete(
             f"{self.BASE_URL}/torrents/delete/{torrent_id}",
             headers=self._headers(),

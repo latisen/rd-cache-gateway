@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+import time
 from contextlib import asynccontextmanager
+from urllib.parse import unquote, urljoin, urlparse
 
-from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
+import requests
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import PlainTextResponse
 
 from app.api_qbit import (
@@ -20,6 +24,7 @@ from app.api_qbit import (
 )
 from app.config import get_settings
 from app.jobs_store import JobStore
+from app.live_log import LiveLogServer, get_recent_logs, install_live_log_handler
 from app.models import (
     CreateJobRequest,
     CreateJobResponse,
@@ -38,6 +43,7 @@ logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
+install_live_log_handler()
 logger = logging.getLogger(__name__)
 
 get_settings.cache_clear()
@@ -45,6 +51,7 @@ settings = get_settings()
 store = JobStore(settings.jobs_file)
 rd_client = RealDebridClient(settings.rd_token)
 poller = JobPoller(store=store, rd_client=rd_client, settings=settings)
+live_log_server = LiveLogServer(port=settings.debug_web_port)
 
 
 def qbit_ok_plain(text: str = "Ok.") -> Response:
@@ -69,6 +76,47 @@ def fetch_rd_info_raw(torrent_id: str) -> dict:
 
 def rd_delete_torrent(torrent_id: str) -> None:
     rd_client.delete_torrent(torrent_id)
+
+
+def _extract_remote_filename(source_url: str, response: requests.Response) -> str:
+    content_disposition = response.headers.get("Content-Disposition", "")
+    match = re.search(r"filename\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?", content_disposition, re.IGNORECASE)
+    if match:
+        return unquote(match.group(1) or match.group(2) or "download.torrent")
+    path = urlparse(response.url or source_url).path
+    name = os.path.basename(path)
+    return name or "download.torrent"
+
+
+def resolve_add_url(url: str) -> dict:
+    if is_magnet_link(url):
+        return {"kind": "magnet", "value": url}
+
+    logger.info("ADD resolving remote url=%s", url)
+    headers = {"User-Agent": settings.app_name}
+    probe = requests.get(url, headers=headers, timeout=60, allow_redirects=False)
+    if probe.is_redirect or probe.is_permanent_redirect:
+        location = probe.headers.get("Location")
+        if location:
+            redirected = urljoin(url, location)
+            if is_magnet_link(redirected):
+                logger.info("ADD remote url redirected to magnet")
+                return {"kind": "magnet", "value": redirected}
+            url = redirected
+
+    response = requests.get(url, headers=headers, timeout=60, allow_redirects=True)
+    response.raise_for_status()
+    text_body = response.text.strip() if "text" in response.headers.get("Content-Type", "").lower() else ""
+    if is_magnet_link(response.url):
+        logger.info("ADD final remote url became magnet")
+        return {"kind": "magnet", "value": response.url}
+    if text_body.startswith("magnet:?"):
+        logger.info("ADD remote body contained magnet")
+        return {"kind": "magnet", "value": text_body}
+
+    filename = _extract_remote_filename(url, response)
+    logger.info("ADD remote url downloaded torrent filename=%s bytes=%s", filename, len(response.content))
+    return {"kind": "torrent_file", "content": response.content, "filename": filename}
 
 
 def _boolish(value: str | None) -> bool:
@@ -228,12 +276,39 @@ def _resolve_job(torrent_id: str) -> tuple[str, dict]:
 async def lifespan(_: FastAPI):
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.staging_root.mkdir(parents=True, exist_ok=True)
+    if settings.enable_debug_ui:
+        live_log_server.start()
     poller.start()
     yield
     poller.stop()
+    if settings.enable_debug_ui:
+        live_log_server.stop()
 
 
 app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
+
+
+@app.middleware("http")
+async def log_http_requests(request: Request, call_next):
+    path = request.url.path
+    if path in {"/healthz", "/debug/logs"}:
+        return await call_next(request)
+
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("HTTP %s %s failed", request.method, path)
+        raise
+
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    logger.info("HTTP %s %s -> %s %.1fms", request.method, path, response.status_code, elapsed_ms)
+    return response
+
+
+@app.get("/debug/logs")
+def debug_logs(limit: int = 300) -> dict:
+    return {"entries": get_recent_logs(limit)}
 
 
 @app.get("/healthz", response_model=HealthResponse)
@@ -366,12 +441,20 @@ async def qbit_torrents_add(
 
     job_category = (category or "sonarr").strip().lower()
     accepted_any = False
+    entries = extract_urls_from_add_request(urls, url)
+    logger.info("QBIT add request category=%s urls=%s files=%s", job_category, len(entries), len(torrent_files or []))
 
-    for entry in extract_urls_from_add_request(urls, url):
-        if not is_magnet_link(entry):
-            continue
-        _add_magnet_job(entry, job_category)
-        accepted_any = True
+    for entry in entries:
+        try:
+            resolved = resolve_add_url(entry)
+            if resolved.get("kind") == "magnet":
+                _add_magnet_job(str(resolved["value"]), job_category)
+                accepted_any = True
+            elif resolved.get("kind") == "torrent_file":
+                _add_torrent_file_job(bytes(resolved["content"]), str(resolved.get("filename") or "remote.torrent"), job_category)
+                accepted_any = True
+        except Exception:
+            logger.exception("QBIT add failed for entry=%s", entry)
 
     if torrent_files:
         for upload in torrent_files:
