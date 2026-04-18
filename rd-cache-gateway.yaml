@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rd-cache-gateway
+  namespace: automation-system
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rd-cache-gateway
+  template:
+    metadata:
+      labels:
+        app: rd-cache-gateway
+    spec:
+      tolerations:
+        - key: "node.kubernetes.io/not-ready"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 30
+        - key: "node.kubernetes.io/unreachable"
+          operator: "Exists"
+          effect: "NoExecute"
+          tolerationSeconds: 30
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: media-role
+                    operator: In
+                    values:
+                      - primary
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: media-role
+                    operator: In
+                    values:
+                      - secondary
+      containers:
+        - name: rd-cache-gateway
+          image: rd-cache-gateway:local
+          imagePullPolicy: Never
+          env:
+            - name: IMPORT_GRACE_SECONDS
+              value: "90"
+            - name: QBIT_USERNAME
+              value: "admin"
+            - name: QBIT_PASSWORD
+              value: "adminadmin"
+            - name: APP_UID
+              value: "1000"
+            - name: APP_GID
+              value: "1000"
+            - name: SONARR_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rd-cache-gateway-sonarr
+                  key: SONARR_URL
+            - name: SONARR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rd-cache-gateway-sonarr
+                  key: SONARR_API_KEY
+            - name: POLL_INTERVAL
+              value: "5"
+            - name: RD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: rd-cache-gateway-secrets
+                  key: RD_TOKEN
+          ports:
+            - containerPort: 8000
+              name: http
+          volumeMounts:
+            - name: app-data
+              mountPath: /data
+            - name: media-data
+              mountPath: /srv/media/data
+            - name: media-mnt
+              mountPath: /mnt
+              mountPropagation: HostToContainer
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+      volumes:
+        - name: app-data
+          hostPath:
+            path: /srv/media/config/rd-cache-gateway/data
+            type: DirectoryOrCreate
+        - name: media-data
+          hostPath:
+            path: /srv/media/data
+            type: DirectoryOrCreate
+        - name: media-mnt
+          hostPath:
+            path: /srv/media/mnt
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rd-cache-gateway
+  namespace: automation-system
+spec:
+  type: LoadBalancer
+  loadBalancerIP: 192.168.30.58
+  selector:
+    app: rd-cache-gateway
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
