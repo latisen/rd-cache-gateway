@@ -98,3 +98,51 @@ def test_delete_hides_job_from_qbit_listing(tmp_path, monkeypatch):
     info = client.get("/api/v2/torrents/info")
     assert info.status_code == 200
     assert info.json() == []
+
+
+def test_poller_marks_downloaded_job_ready_for_arr_using_media_file_size(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    debrid_root = tmp_path / "debrid"
+    debrid_root.mkdir(parents=True, exist_ok=True)
+    media_file = debrid_root / "Show.Name.S01E01.1080p.mkv"
+    media_file.write_bytes(b"x" * (2 * 1024 * 1024))
+
+    main.store.replace_all(
+        {
+            "rd123": {
+                "torrent_id": "rd123",
+                "rd_torrent_id": "rd123",
+                "filename": media_file.name,
+                "status": "downloading",
+                "category": "sonarr",
+                "raw": {},
+            }
+        }
+    )
+
+    monkeypatch.setattr(main.rd_client, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        main.rd_client,
+        "torrent_info",
+        lambda torrent_id: {
+            "id": torrent_id,
+            "status": "downloaded",
+            "filename": media_file.name,
+            "bytes": 999999,
+            "files": [
+                {
+                    "path": f"/{media_file.name}",
+                    "bytes": 2 * 1024 * 1024,
+                    "selected": 1,
+                }
+            ],
+        },
+    )
+
+    main.poller.poll_once()
+
+    job = main.store.get("rd123")
+    assert job is not None
+    assert job["status"] == "ready_for_arr"
+    assert job["arr_ready_reason"] == "ready"

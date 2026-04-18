@@ -65,6 +65,27 @@ def find_matching_media_file(info: dict, root: Path) -> Path | None:
     return None
 
 
+def extract_expected_media_size(info: dict, source_file: Path) -> int | None:
+    files = info.get("files") or []
+    wanted_name = source_file.name
+    wanted_norm = normalize_name(wanted_name)
+
+    for item in files:
+        item_path = str(item.get("path") or item.get("name") or "")
+        item_name = Path(item_path).name
+        if not item_name:
+            continue
+        if item_name == wanted_name or normalize_name(item_name) == wanted_norm:
+            try:
+                value = int(item.get("bytes") or 0)
+            except Exception:
+                value = 0
+            if value > 0:
+                return value
+
+    return None
+
+
 def create_staging_symlink(
     torrent_id: str,
     source_file: Path,

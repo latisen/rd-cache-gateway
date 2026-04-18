@@ -8,7 +8,12 @@ from app.config import Settings
 from app.jobs_store import JobStore
 from app.models import map_rd_status, now_utc_iso
 from app.rd_client import RealDebridClient
-from app.staging import check_staging_ready, create_staging_symlink, find_matching_media_file
+from app.staging import (
+    check_staging_ready,
+    create_staging_symlink,
+    extract_expected_media_size,
+    find_matching_media_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,9 +110,10 @@ class JobPoller:
                     self.settings.staging_root,
                     self.settings.visible_staging_root,
                 )
+                expected_media_size = extract_expected_media_size(info, source_file)
                 ready, reason, details = check_staging_ready(
                     staging_path,
-                    info.get("bytes"),
+                    expected_media_size,
                     self.settings.import_stability_min_bytes,
                 )
 
