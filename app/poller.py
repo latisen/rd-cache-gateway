@@ -145,7 +145,7 @@ class JobPoller:
                     patch["status"] = "ready_for_arr"
                     arr_client = get_arr_client(job.get("category"), self.settings)
                     if arr_client.is_configured() and not job.get("arr_scan_command"):
-                        download_client_id = str(job.get("client_hash") or job_id)
+                        download_client_id = str(job.get("client_hash") or job_id).upper()
                         patch["arr_refresh_command"] = arr_client.refresh_monitored_downloads()
                         patch["arr_scan_command"] = arr_client.trigger_scan(visible_dir, download_client_id)
                         patch["status"] = "scan_pending"

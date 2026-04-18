@@ -79,11 +79,12 @@ def _boolish(value: str | None) -> bool:
 
 def _create_placeholder_job(name: str, category: str, source: str, seed: str, preferred_id: str | None = None) -> str:
     temp_id = (preferred_id or temporary_job_id_from_text(f"{seed}|{now_utc_iso()}"))
+    client_hash = str(preferred_id or temp_id).upper()
     store.merge(
         temp_id,
         {
             "torrent_id": temp_id,
-            "client_hash": temp_id,
+            "client_hash": client_hash,
             "filename": name,
             "saved_at": now_utc_iso(),
             "last_checked_at": now_utc_iso(),
@@ -118,14 +119,15 @@ def _finalize_job(
     *,
     client_hash: str | None = None,
 ) -> tuple[str, dict]:
-    job_id = str(client_hash or temp_id or rd_id).lower()
+    normalized_client_hash = str(client_hash or temp_id or rd_id).upper()
+    job_id = normalized_client_hash.lower()
     if temp_id != job_id:
         store.replace_key(temp_id, job_id)
     job = store.merge(
         job_id,
         {
             "torrent_id": job_id,
-            "client_hash": job_id,
+            "client_hash": normalized_client_hash,
             "rd_torrent_id": rd_id,
             "filename": info.get("filename") or job_id,
             "saved_at": now_utc_iso(),

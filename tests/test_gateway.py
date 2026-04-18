@@ -365,6 +365,6 @@ def test_poller_uses_client_hash_as_download_client_id(tmp_path, monkeypatch):
     job = main.store.get(REAL_HASH)
     assert job is not None
     assert job["status"] == "scan_pending"
-    assert captured["download_id"] == REAL_HASH
+    assert captured["download_id"] == REAL_HASH.upper()
     assert captured["folder"].startswith(str(tmp_path / "sonarr"))
     assert "Show.Name.S01E01.1080p-" in captured["folder"]
