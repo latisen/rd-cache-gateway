@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 from pathlib import Path
 from threading import RLock
 from typing import Callable
+
+logger = logging.getLogger(__name__)
 
 
 class JobStore:
@@ -16,9 +19,17 @@ class JobStore:
 
     def ensure_ready(self) -> None:
         with self._lock:
-            self.jobs_file.parent.mkdir(parents=True, exist_ok=True)
-            if not self.jobs_file.exists():
-                self._write_unlocked({})
+            try:
+                self.jobs_file.parent.mkdir(parents=True, exist_ok=True)
+                if not self.jobs_file.exists():
+                    self._write_unlocked({})
+            except PermissionError:
+                fallback_dir = Path(tempfile.gettempdir()) / "rd-cache-gateway-data"
+                fallback_dir.mkdir(parents=True, exist_ok=True)
+                self.jobs_file = fallback_dir / self.jobs_file.name
+                logger.warning("DATA_DIR not writable, falling back to %s", self.jobs_file)
+                if not self.jobs_file.exists():
+                    self._write_unlocked({})
 
     def _read_unlocked(self) -> dict[str, dict]:
         if not self.jobs_file.exists():

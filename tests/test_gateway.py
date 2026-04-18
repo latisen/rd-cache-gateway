@@ -35,6 +35,29 @@ def test_healthz_and_empty_qbit_list(tmp_path, monkeypatch):
     assert info.json() == []
 
 
+def test_falls_back_when_data_dir_is_not_writable(tmp_path, monkeypatch):
+    locked = tmp_path / "locked-data"
+    locked.mkdir()
+    locked.chmod(0o555)
+
+    monkeypatch.setenv("DATA_DIR", str(locked))
+    monkeypatch.setenv("STAGING_ROOT", str(tmp_path / "staging"))
+    monkeypatch.setenv("SONARR_STAGING_ROOT", str(tmp_path / "sonarr"))
+    monkeypatch.setenv("DEBRID_ALL_DIR", str(tmp_path / "debrid"))
+    monkeypatch.setenv("QBIT_USERNAME", "admin")
+    monkeypatch.setenv("QBIT_PASSWORD", "adminadmin")
+    monkeypatch.setenv("ENABLE_POLLER", "0")
+
+    import app.main as main
+
+    main = importlib.reload(main)
+    client = TestClient(main.app)
+
+    health = client.get("/healthz")
+    assert health.status_code == 200
+    assert "rd-cache-gateway-data" in str(main.store.jobs_file)
+
+
 def test_add_magnet_persists_job_in_configured_data_dir(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 
