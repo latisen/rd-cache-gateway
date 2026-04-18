@@ -14,7 +14,9 @@ from app.api_qbit import (
     extract_urls_from_add_request,
     is_magnet_link,
     magnet_display_name,
+    magnet_info_hash,
     temporary_job_id_from_text,
+    torrent_file_info_hash,
 )
 from app.config import get_settings
 from app.jobs_store import JobStore
@@ -75,12 +77,13 @@ def _boolish(value: str | None) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _create_placeholder_job(name: str, category: str, source: str, seed: str) -> str:
-    temp_id = temporary_job_id_from_text(f"{seed}|{now_utc_iso()}")
+def _create_placeholder_job(name: str, category: str, source: str, seed: str, preferred_id: str | None = None) -> str:
+    temp_id = (preferred_id or temporary_job_id_from_text(f"{seed}|{now_utc_iso()}"))
     store.merge(
         temp_id,
         {
             "torrent_id": temp_id,
+            "client_hash": temp_id,
             "filename": name,
             "saved_at": now_utc_iso(),
             "last_checked_at": now_utc_iso(),
@@ -106,14 +109,23 @@ def _record_failure(job_id: str, exc: Exception) -> None:
     )
 
 
-def _finalize_job(temp_id: str, rd_id: str, info: dict, category: str, source: str) -> tuple[str, dict]:
-    job_id = rd_id
-    if temp_id != rd_id:
-        store.replace_key(temp_id, rd_id)
+def _finalize_job(
+    temp_id: str,
+    rd_id: str,
+    info: dict,
+    category: str,
+    source: str,
+    *,
+    client_hash: str | None = None,
+) -> tuple[str, dict]:
+    job_id = str(client_hash or temp_id or rd_id).lower()
+    if temp_id != job_id:
+        store.replace_key(temp_id, job_id)
     job = store.merge(
         job_id,
         {
             "torrent_id": job_id,
+            "client_hash": job_id,
             "rd_torrent_id": rd_id,
             "filename": info.get("filename") or job_id,
             "saved_at": now_utc_iso(),
@@ -131,7 +143,8 @@ def _finalize_job(temp_id: str, rd_id: str, info: dict, category: str, source: s
 
 def _add_magnet_job(magnet_uri: str, category: str, *, raise_on_error: bool = False) -> tuple[str, dict]:
     display_name = magnet_display_name(magnet_uri)
-    temp_id = _create_placeholder_job(display_name, category, "magnet", magnet_uri)
+    client_hash = magnet_info_hash(magnet_uri)
+    temp_id = _create_placeholder_job(display_name, category, "magnet", magnet_uri, preferred_id=client_hash)
     logger.info("ADD start type=magnet temp_id=%s name=%s category=%s", temp_id, display_name, category)
 
     try:
@@ -139,7 +152,7 @@ def _add_magnet_job(magnet_uri: str, category: str, *, raise_on_error: bool = Fa
         rd_select_all_files(rd_id)
         info = fetch_rd_info_raw(rd_id)
         logger.info("ADD linked temp_id=%s rd_id=%s", temp_id, rd_id)
-        return _finalize_job(temp_id, rd_id, info, category, "magnet")
+        return _finalize_job(temp_id, rd_id, info, category, "magnet", client_hash=client_hash)
     except Exception as exc:
         logger.exception("ADD failed temp_id=%s", temp_id)
         _record_failure(temp_id, exc)
@@ -156,7 +169,14 @@ def _add_torrent_file_job(
     raise_on_error: bool = False,
 ) -> tuple[str, dict]:
     display_name = filename or "upload.torrent"
-    temp_id = _create_placeholder_job(display_name, category, "torrent_file", f"{display_name}:{len(content)}")
+    client_hash = torrent_file_info_hash(content)
+    temp_id = _create_placeholder_job(
+        display_name,
+        category,
+        "torrent_file",
+        f"{display_name}:{len(content)}",
+        preferred_id=client_hash,
+    )
     logger.info("ADD start type=torrent_file temp_id=%s name=%s category=%s", temp_id, display_name, category)
 
     try:
@@ -164,7 +184,7 @@ def _add_torrent_file_job(
         rd_select_all_files(rd_id)
         info = fetch_rd_info_raw(rd_id)
         logger.info("ADD linked temp_id=%s rd_id=%s", temp_id, rd_id)
-        return _finalize_job(temp_id, rd_id, info, category, "torrent_file")
+        return _finalize_job(temp_id, rd_id, info, category, "torrent_file", client_hash=client_hash)
     except Exception as exc:
         logger.exception("ADD failed temp_id=%s", temp_id)
         _record_failure(temp_id, exc)
@@ -180,6 +200,10 @@ def _resolve_job(torrent_id: str) -> tuple[str, dict]:
     wanted = torrent_id.lower()
     for key, value in jobs.items():
         if str(key).lower() == wanted:
+            return key, value
+        if str(value.get("client_hash") or "").lower() == wanted:
+            return key, value
+        if str(value.get("rd_torrent_id") or "").lower() == wanted:
             return key, value
     raise HTTPException(status_code=404, detail="Job not found")
 
@@ -410,9 +434,10 @@ def qbit_torrents_properties(hash: str):
     resolved_id, job = _resolve_job(hash)
     raw = job.get("raw") or {}
     total_size = safe_int(raw.get("bytes"), 0)
-    progress = 1.0 if job.get("status") in {"ready_for_arr", "scan_pending", "imported"} else 0.0
+    progress = 1.0 if job.get("status") in {"ready", "staged", "ready_for_arr", "scan_pending", "imported"} else 0.0
     return {
-        "save_path": f"{settings.qbit_save_path}/{resolved_id}",
+        "hash": str(job.get("client_hash") or resolved_id).lower(),
+        "save_path": str(job.get("arr_path") or f"{settings.qbit_save_path}/{resolved_id}"),
         "creation_date": 0,
         "piece_size": 0,
         "comment": "",

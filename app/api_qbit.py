@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import re
 from datetime import datetime, timezone
@@ -34,6 +35,78 @@ def magnet_display_name(magnet_uri: str) -> str:
         return match.group(1)
 
 
+def magnet_info_hash(magnet_uri: str) -> str | None:
+    match = re.search(r"[?&]xt=urn:btih:([A-Za-z0-9]+)", magnet_uri, re.IGNORECASE)
+    if not match:
+        return None
+
+    raw = match.group(1).strip()
+    if re.fullmatch(r"[0-9A-Fa-f]{40}|[0-9A-Fa-f]{64}", raw):
+        return raw.lower()
+
+    if re.fullmatch(r"[A-Z2-7]{32}", raw.upper()):
+        try:
+            return base64.b32decode(raw.upper()).hex()
+        except Exception:
+            return None
+
+    return raw.lower() if raw else None
+
+
+def _consume_bencode_value(data: bytes, index: int) -> int:
+    token = data[index:index + 1]
+    if not token:
+        raise ValueError("Unexpected end of torrent data")
+
+    if token == b"i":
+        return data.index(b"e", index + 1) + 1
+
+    if token == b"l":
+        index += 1
+        while data[index:index + 1] != b"e":
+            index = _consume_bencode_value(data, index)
+        return index + 1
+
+    if token == b"d":
+        index += 1
+        while data[index:index + 1] != b"e":
+            colon = data.index(b":", index)
+            key_length = int(data[index:colon])
+            key_end = colon + 1 + key_length
+            index = _consume_bencode_value(data, key_end)
+        return index + 1
+
+    if token.isdigit():
+        colon = data.index(b":", index)
+        length = int(data[index:colon])
+        return colon + 1 + length
+
+    raise ValueError("Invalid bencode token")
+
+
+def torrent_file_info_hash(content: bytes) -> str | None:
+    try:
+        if not content.startswith(b"d"):
+            return None
+
+        index = 1
+        while content[index:index + 1] != b"e":
+            colon = content.index(b":", index)
+            key_length = int(content[index:colon])
+            key_start = colon + 1
+            key_end = key_start + key_length
+            key = content[key_start:key_end]
+            value_start = key_end
+            value_end = _consume_bencode_value(content, value_start)
+            if key == b"info":
+                return hashlib.sha1(content[value_start:value_end]).hexdigest()
+            index = value_end
+    except Exception:
+        return None
+
+    return None
+
+
 def temporary_job_id_from_text(value: str) -> str:
     return hashlib.sha1(value.encode("utf-8")).hexdigest()[:12]
 
@@ -60,6 +133,9 @@ def build_qbit_torrent_list(
         raw = job.get("raw") or {}
         job_status = str(job.get("status") or "queued")
         state = map_job_to_qbit_state(job_status)
+        display_hash = str(job.get("client_hash") or torrent_id).lower()
+        save_dir = str(job.get("arr_path") or f"{save_path}/{display_hash}")
+        content_path = str(job.get("staging_path") or (f"{save_dir}/{job.get('filename')}" if job.get("filename") else save_dir))
         progress = 0.0
         eta = 8640000
         completion_on = 0
@@ -82,7 +158,7 @@ def build_qbit_torrent_list(
         total_size = safe_int(raw.get("bytes"), 0)
         items.append(
             {
-                "hash": str(torrent_id).lower(),
+                "hash": display_hash,
                 "name": job.get("filename") or torrent_id,
                 "state": state,
                 "progress": progress,
@@ -96,7 +172,9 @@ def build_qbit_torrent_list(
                 "ratio": 0,
                 "eta": eta,
                 "category": category,
-                "save_path": f"{save_path}/{torrent_id}",
+                "label": category,
+                "save_path": save_dir,
+                "content_path": content_path,
                 "completion_on": completion_on,
             }
         )

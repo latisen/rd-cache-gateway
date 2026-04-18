@@ -5,6 +5,8 @@ from fastapi.testclient import TestClient
 
 
 MAGNET = "magnet:?xt=urn:btih:ABC123&dn=Example.Release.S01E01.1080p"
+REAL_HASH = "0123456789abcdef0123456789abcdef01234567"
+REAL_MAGNET = f"magnet:?xt=urn:btih:{REAL_HASH.upper()}&dn=Example.Release.S01E01.1080p"
 
 
 def load_main(tmp_path, monkeypatch):
@@ -68,7 +70,7 @@ def test_add_magnet_persists_job_in_configured_data_dir(tmp_path, monkeypatch):
     payload = info.json()
     assert len(payload) == 1
     assert payload[0]["category"] == "sonarr"
-    assert payload[0]["state"] == "downloading"
+    assert payload[0]["state"] == "queuedDL"
 
 
 def test_delete_hides_job_from_qbit_listing(tmp_path, monkeypatch):
@@ -98,6 +100,45 @@ def test_delete_hides_job_from_qbit_listing(tmp_path, monkeypatch):
     info = client.get("/api/v2/torrents/info")
     assert info.status_code == 200
     assert info.json() == []
+
+
+def test_magnet_uses_stable_infohash_for_sonarr_tracking(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    monkeypatch.setattr(main, "rd_add_magnet", lambda magnet_uri: "rd123")
+    monkeypatch.setattr(main, "rd_select_all_files", lambda torrent_id: None)
+    monkeypatch.setattr(
+        main,
+        "fetch_rd_info_raw",
+        lambda torrent_id: {
+            "id": torrent_id,
+            "status": "downloaded",
+            "filename": "Example.Release.S01E01.1080p.mkv",
+            "bytes": 123456789,
+            "files": [],
+        },
+    )
+
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/v2/torrents/add",
+        data={"urls": REAL_MAGNET, "category": "sonarr"},
+    )
+
+    assert response.status_code == 200
+
+    info = client.get("/api/v2/torrents/info")
+    assert info.status_code == 200
+    payload = info.json()
+    assert len(payload) == 1
+    assert payload[0]["hash"] == REAL_HASH
+    assert payload[0]["state"] == "pausedUP"
+    assert payload[0]["label"] == "sonarr"
+    assert payload[0]["content_path"].endswith("Example.Release.S01E01.1080p.mkv")
+
+    job = main.store.get(REAL_HASH)
+    assert job is not None
+    assert job["rd_torrent_id"] == "rd123"
 
 
 def test_poller_marks_downloaded_job_ready_for_arr_using_media_file_size(tmp_path, monkeypatch):
@@ -146,3 +187,71 @@ def test_poller_marks_downloaded_job_ready_for_arr_using_media_file_size(tmp_pat
     assert job is not None
     assert job["status"] == "ready_for_arr"
     assert job["arr_ready_reason"] == "ready"
+
+
+def test_poller_uses_client_hash_as_download_client_id(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    debrid_root = tmp_path / "debrid"
+    debrid_root.mkdir(parents=True, exist_ok=True)
+    media_file = debrid_root / "Show.Name.S01E01.1080p.mkv"
+    media_file.write_bytes(b"x" * (2 * 1024 * 1024))
+
+    captured: dict[str, str] = {}
+
+    class FakeArrClient:
+        def is_configured(self):
+            return True
+
+        def refresh_monitored_downloads(self):
+            return {"id": 1, "name": "RefreshMonitoredDownloads"}
+
+        def trigger_scan(self, folder, download_id):
+            captured["folder"] = str(folder)
+            captured["download_id"] = str(download_id)
+            return {"id": 2, "name": "DownloadedEpisodesScan"}
+
+        def get_command(self, command_id):
+            return {"id": command_id, "status": "queued"}
+
+    main.store.replace_all(
+        {
+            REAL_HASH: {
+                "torrent_id": REAL_HASH,
+                "client_hash": REAL_HASH,
+                "rd_torrent_id": "rd555",
+                "filename": media_file.name,
+                "status": "downloading",
+                "category": "sonarr",
+                "raw": {},
+            }
+        }
+    )
+
+    monkeypatch.setattr(main.rd_client, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        main.rd_client,
+        "torrent_info",
+        lambda torrent_id: {
+            "id": torrent_id,
+            "status": "downloaded",
+            "filename": media_file.name,
+            "bytes": 2 * 1024 * 1024,
+            "files": [
+                {
+                    "path": f"/{media_file.name}",
+                    "bytes": 2 * 1024 * 1024,
+                    "selected": 1,
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr("app.poller.get_arr_client", lambda category, settings: FakeArrClient())
+
+    main.poller.poll_once()
+
+    job = main.store.get(REAL_HASH)
+    assert job is not None
+    assert job["status"] == "scan_pending"
+    assert captured["download_id"] == REAL_HASH
+    assert captured["folder"].endswith(REAL_HASH)

@@ -30,10 +30,10 @@ RD_TO_JOB_STATUS: dict[str, JobStatus] = {
 }
 
 JOB_TO_QBIT_STATE: dict[str, str] = {
-    "queued": "downloading",
+    "queued": "queuedDL",
     "downloading": "downloading",
-    "ready": "downloading",
-    "staged": "downloading",
+    "ready": "pausedUP",
+    "staged": "pausedUP",
     "ready_for_arr": "pausedUP",
     "scan_pending": "pausedUP",
     "imported": "pausedUP",
@@ -53,7 +53,7 @@ def map_rd_status(rd_status: str | None) -> JobStatus:
 
 def map_job_to_qbit_state(job_status: str | None) -> str:
     if not job_status:
-        return "downloading"
+        return "queuedDL"
     return JOB_TO_QBIT_STATE.get(job_status, "downloading")
 
 
