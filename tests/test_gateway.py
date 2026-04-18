@@ -187,6 +187,14 @@ def test_poller_marks_downloaded_job_ready_for_arr_using_media_file_size(tmp_pat
     assert job is not None
     assert job["status"] == "ready_for_arr"
     assert job["arr_ready_reason"] == "ready"
+    assert str(tmp_path / "sonarr") in job["arr_path"]
+    assert media_file.name in job["arr_file_path"]
+    assert "Show.Name.S01E01.1080p-rd123" in job["arr_path"]
+
+    info = TestClient(main.app).get("/api/v2/torrents/info")
+    payload = info.json()
+    assert payload[0]["content_path"].startswith(str(tmp_path / "sonarr"))
+    assert payload[0]["content_path"].endswith(media_file.name)
 
 
 def test_poller_uses_client_hash_as_download_client_id(tmp_path, monkeypatch):
@@ -254,4 +262,5 @@ def test_poller_uses_client_hash_as_download_client_id(tmp_path, monkeypatch):
     assert job is not None
     assert job["status"] == "scan_pending"
     assert captured["download_id"] == REAL_HASH
-    assert captured["folder"].endswith(REAL_HASH)
+    assert captured["folder"].startswith(str(tmp_path / "sonarr"))
+    assert "Show.Name.S01E01.1080p-" in captured["folder"]

@@ -135,7 +135,7 @@ def build_qbit_torrent_list(
         state = map_job_to_qbit_state(job_status)
         display_hash = str(job.get("client_hash") or torrent_id).lower()
         save_dir = str(job.get("arr_path") or f"{save_path}/{display_hash}")
-        content_path = str(job.get("staging_path") or (f"{save_dir}/{job.get('filename')}" if job.get("filename") else save_dir))
+        content_path = str(job.get("arr_file_path") or (f"{save_dir}/{job.get('filename')}" if job.get("filename") else save_dir))
         progress = 0.0
         eta = 8640000
         completion_on = 0

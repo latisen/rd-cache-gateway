@@ -274,6 +274,7 @@ def get_job(torrent_id: str) -> JobStatusResponse:
         source_path=job.get("source_path"),
         staging_path=job.get("staging_path"),
         arr_path=job.get("arr_path"),
+        arr_file_path=job.get("arr_file_path"),
         raw=job.get("raw"),
         last_error=job.get("last_error"),
         imported_at=job.get("imported_at"),

@@ -111,6 +111,7 @@ class JobStatusResponse(BaseModel):
     source_path: str | None = None
     staging_path: str | None = None
     arr_path: str | None = None
+    arr_file_path: str | None = None
     raw: dict[str, Any] | None = None
     last_error: str | None = None
     imported_at: str | None = None

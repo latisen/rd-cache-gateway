@@ -56,6 +56,12 @@ spec:
               value: "1000"
             - name: APP_GID
               value: "1000"
+            - name: STAGING_ROOT
+              value: "/srv/media/data/downloads/rd-cache-gateway"
+            - name: SONARR_STAGING_ROOT
+              value: "/data/downloads/rd-cache-gateway"
+            - name: DEBRID_ALL_DIR
+              value: "/mnt/debrid/decypharr/realdebrid/__all__"
             - name: SONARR_URL
               valueFrom:
                 secretKeyRef:

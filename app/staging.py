@@ -8,6 +8,16 @@ from pathlib import Path
 VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov", ".m4v"}
 
 
+def stage_folder_name(torrent_id: str, source_file: Path) -> str:
+    base = re.sub(r"[^A-Za-z0-9._ -]+", ".", source_file.stem).strip(" .")
+    base = re.sub(r"\s+", ".", base)
+    base = re.sub(r"\.+", ".", base)
+    if not base:
+        base = "release"
+    suffix = re.sub(r"[^A-Za-z0-9]+", "", torrent_id).lower()[:12] or "job"
+    return f"{base}-{suffix}"
+
+
 def normalize_name(value: str) -> str:
     value = Path(value).name.lower().strip()
     value = re.sub(r"\.[a-z0-9]{2,4}$", "", value)
@@ -91,29 +101,37 @@ def create_staging_symlink(
     source_file: Path,
     staging_root: Path,
     visible_root: Path,
-) -> tuple[Path, Path]:
-    host_dir = staging_root / torrent_id
+) -> tuple[Path, Path, Path]:
+    folder_name = stage_folder_name(torrent_id, source_file)
+    host_dir = staging_root / folder_name
     host_dir.mkdir(parents=True, exist_ok=True)
 
     link_path = host_dir / source_file.name
     if link_path.exists() or link_path.is_symlink():
         link_path.unlink()
-    link_path.symlink_to(source_file, target_is_directory=False)
+    link_target = os.path.relpath(str(source_file), start=str(host_dir))
+    link_path.symlink_to(link_target, target_is_directory=False)
 
-    return link_path, visible_root / torrent_id
+    visible_dir = visible_root / folder_name
+    visible_file = visible_dir / source_file.name
+    return link_path, visible_dir, visible_file
 
 
 def cleanup_staging_for_job(torrent_id: str, staging_root: Path) -> None:
-    job_dir = staging_root / torrent_id
-    if not job_dir.exists():
-        return
-    for child in job_dir.iterdir():
-        if child.is_symlink() or child.is_file():
-            child.unlink(missing_ok=True)
-    try:
-        job_dir.rmdir()
-    except OSError:
-        pass
+    candidates = [staging_root / torrent_id, *staging_root.glob(f"*-{torrent_id}")]
+    seen: set[Path] = set()
+
+    for job_dir in candidates:
+        if job_dir in seen or not job_dir.exists():
+            continue
+        seen.add(job_dir)
+        for child in job_dir.iterdir():
+            if child.is_symlink() or child.is_file():
+                child.unlink(missing_ok=True)
+        try:
+            job_dir.rmdir()
+        except OSError:
+            pass
 
 
 def check_staging_ready(

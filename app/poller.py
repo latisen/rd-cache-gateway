@@ -104,7 +104,7 @@ class JobPoller:
                     self.store.merge(job_id, patch)
                     continue
 
-                staging_path, visible_dir = create_staging_symlink(
+                staging_path, visible_dir, visible_file = create_staging_symlink(
                     job_id,
                     source_file,
                     self.settings.staging_root,
@@ -122,6 +122,7 @@ class JobPoller:
                         "source_path": str(source_file),
                         "staging_path": str(staging_path),
                         "arr_path": str(visible_dir),
+                        "arr_file_path": str(visible_file),
                         "arr_ready_reason": reason,
                         "arr_ready_details": details,
                         "status": "staged",
