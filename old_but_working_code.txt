@@ -152,14 +152,7 @@ def _add_magnet_job(magnet_uri: str, category: str, *, raise_on_error: bool = Fa
         rd_select_all_files(rd_id)
         info = fetch_rd_info_raw(rd_id)
         logger.info("ADD linked temp_id=%s rd_id=%s", temp_id, rd_id)
-        job_id, job = _finalize_job(temp_id, rd_id, info, category, "magnet", client_hash=client_hash)
-        if job.get("status") == "ready":
-            try:
-                poller.poll_once()
-                job = store.get(job_id) or job
-            except Exception:
-                logger.exception("ADD immediate staging failed job_id=%s", job_id)
-        return job_id, job
+        return _finalize_job(temp_id, rd_id, info, category, "magnet", client_hash=client_hash)
     except Exception as exc:
         logger.exception("ADD failed temp_id=%s", temp_id)
         _record_failure(temp_id, exc)
@@ -191,14 +184,7 @@ def _add_torrent_file_job(
         rd_select_all_files(rd_id)
         info = fetch_rd_info_raw(rd_id)
         logger.info("ADD linked temp_id=%s rd_id=%s", temp_id, rd_id)
-        job_id, job = _finalize_job(temp_id, rd_id, info, category, "torrent_file", client_hash=client_hash)
-        if job.get("status") == "ready":
-            try:
-                poller.poll_once()
-                job = store.get(job_id) or job
-            except Exception:
-                logger.exception("ADD immediate staging failed job_id=%s", job_id)
-        return job_id, job
+        return _finalize_job(temp_id, rd_id, info, category, "torrent_file", client_hash=client_hash)
     except Exception as exc:
         logger.exception("ADD failed temp_id=%s", temp_id)
         _record_failure(temp_id, exc)
@@ -288,7 +274,6 @@ def get_job(torrent_id: str) -> JobStatusResponse:
         source_path=job.get("source_path"),
         staging_path=job.get("staging_path"),
         arr_path=job.get("arr_path"),
-        arr_file_path=job.get("arr_file_path"),
         raw=job.get("raw"),
         last_error=job.get("last_error"),
         imported_at=job.get("imported_at"),
@@ -449,7 +434,7 @@ def qbit_torrents_properties(hash: str):
     resolved_id, job = _resolve_job(hash)
     raw = job.get("raw") or {}
     total_size = safe_int(raw.get("bytes"), 0)
-    progress = 1.0 if job.get("status") in {"staged", "ready_for_arr", "scan_pending", "imported"} else 0.0
+    progress = 1.0 if job.get("status") in {"ready", "staged", "ready_for_arr", "scan_pending", "imported"} else 0.0
     return {
         "hash": str(job.get("client_hash") or resolved_id).lower(),
         "save_path": str(job.get("arr_path") or f"{settings.qbit_save_path}/{resolved_id}"),

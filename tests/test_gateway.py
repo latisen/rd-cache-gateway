@@ -132,13 +132,44 @@ def test_magnet_uses_stable_infohash_for_sonarr_tracking(tmp_path, monkeypatch):
     payload = info.json()
     assert len(payload) == 1
     assert payload[0]["hash"] == REAL_HASH
-    assert payload[0]["state"] == "pausedUP"
+    assert payload[0]["state"] == "downloading"
+    assert payload[0]["progress"] == 0.99
     assert payload[0]["label"] == "sonarr"
     assert payload[0]["content_path"].endswith("Example.Release.S01E01.1080p.mkv")
 
     job = main.store.get(REAL_HASH)
     assert job is not None
     assert job["rd_torrent_id"] == "rd123"
+
+
+def test_cached_download_triggers_immediate_stage_attempt(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+    called = {"count": 0}
+
+    monkeypatch.setattr(main, "rd_add_magnet", lambda magnet_uri: "rd123")
+    monkeypatch.setattr(main, "rd_select_all_files", lambda torrent_id: None)
+    monkeypatch.setattr(
+        main,
+        "fetch_rd_info_raw",
+        lambda torrent_id: {
+            "id": torrent_id,
+            "status": "downloaded",
+            "filename": "Example.Release.S01E01.1080p.mkv",
+            "bytes": 123456789,
+            "files": [],
+        },
+    )
+    monkeypatch.setattr(main.poller, "poll_once", lambda: called.__setitem__("count", called["count"] + 1))
+
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/v2/torrents/add",
+        data={"urls": REAL_MAGNET, "category": "sonarr"},
+    )
+
+    assert response.status_code == 200
+    assert called["count"] == 1
+
 
 
 def test_poller_marks_downloaded_job_ready_for_arr_using_media_file_size(tmp_path, monkeypatch):

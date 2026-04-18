@@ -148,6 +148,9 @@ def build_qbit_torrent_list(
         elif job_status == "staged":
             progress = 0.95
             eta = 60
+        elif job_status == "ready":
+            progress = 0.99
+            eta = 30
         elif job_status == "downloading":
             progress = safe_progress(safe_int(raw.get("progress"), 0) / 100.0, 0.0)
         elif job_status == "queued":
