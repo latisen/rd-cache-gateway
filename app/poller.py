@@ -53,7 +53,10 @@ class JobPoller:
     def poll_once(self) -> None:
         jobs = self.store.all()
         for job_id, job in jobs.items():
-            if not isinstance(job, dict) or job.get("deleted_by_client"):
+            if not isinstance(job, dict) or job.get("deleted_by_client") or job.get("polling_disabled"):
+                continue
+
+            if job.get("status") == "imported":
                 continue
 
             rd_id = job.get("rd_torrent_id") or job.get("torrent_id")
@@ -79,7 +82,22 @@ class JobPoller:
                                 },
                             )
                             logger.info("IMPORT success torrent_id=%s", job_id)
-                            continue
+                        continue
+
+                if job.get("status") == "ready_for_arr":
+                    arr_client = get_arr_client(job.get("category"), self.settings)
+                    arr_path = job.get("arr_path")
+                    if arr_client.is_configured() and arr_path and not job.get("arr_scan_command"):
+                        download_client_id = str(job.get("client_hash") or job_id).upper()
+                        patch = {
+                            "arr_refresh_command": arr_client.refresh_monitored_downloads(),
+                            "arr_scan_command": arr_client.trigger_scan(self.settings.visible_staging_root.__class__(arr_path), download_client_id),
+                            "status": "scan_pending",
+                            "last_error": None,
+                        }
+                        self.store.merge(job_id, patch)
+                        logger.info("POLL queued import scan torrent_id=%s", job_id)
+                    continue
 
                 info = self.rd_client.torrent_info(str(rd_id))
                 patch = {
@@ -153,11 +171,12 @@ class JobPoller:
                 self.store.merge(job_id, patch)
                 logger.info("POLL updated torrent_id=%s status=%s", job_id, patch['status'])
             except Exception as exc:
-                self.store.merge(
-                    job_id,
-                    {
-                        "last_checked_at": now_utc_iso(),
-                        "last_error": str(exc),
-                    },
-                )
+                message = str(exc)
+                patch = {
+                    "last_checked_at": now_utc_iso(),
+                    "last_error": message,
+                }
+                if "unknown_ressource" in message or "404" in message:
+                    patch["polling_disabled"] = True
+                self.store.merge(job_id, patch)
                 logger.exception("POLL error torrent_id=%s", job_id)

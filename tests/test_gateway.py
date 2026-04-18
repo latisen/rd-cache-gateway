@@ -3,6 +3,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.staging import find_matching_media_file
+
 
 MAGNET = "magnet:?xt=urn:btih:ABC123&dn=Example.Release.S01E01.1080p"
 REAL_HASH = "0123456789abcdef0123456789abcdef01234567"
@@ -207,7 +209,7 @@ def test_magnet_uses_stable_infohash_for_sonarr_tracking(tmp_path, monkeypatch):
     assert job["rd_torrent_id"] == "rd123"
 
 
-def test_cached_download_triggers_immediate_stage_attempt(tmp_path, monkeypatch):
+def test_cached_download_add_does_not_run_global_poll_inline(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
     called = {"count": 0}
 
@@ -233,7 +235,25 @@ def test_cached_download_triggers_immediate_stage_attempt(tmp_path, monkeypatch)
     )
 
     assert response.status_code == 200
-    assert called["count"] == 1
+    assert called["count"] == 0
+
+
+
+def test_find_matching_media_file_does_not_pick_wrong_show(tmp_path):
+    debrid_root = tmp_path / "debrid"
+    debrid_root.mkdir(parents=True, exist_ok=True)
+
+    wrong = debrid_root / "Blue.Bloods.S03E11.1080p.WEB-DL.mkv"
+    wrong.write_bytes(b"x" * 100)
+    correct = debrid_root / "Below.Deck.Down.Under.S03E11.The.Shots.You.Dont.Take.1080p.WEB-DL.mkv"
+    correct.write_bytes(b"x" * 100)
+
+    info = {
+        "filename": "Below Deck Down Under S03E11 The Shots You Dont Take 1080p WEB-DL.mkv",
+    }
+
+    match = find_matching_media_file(info, debrid_root)
+    assert match == correct
 
 
 
@@ -340,6 +360,36 @@ def test_visible_arr_symlink_is_created_for_sonarr_import(tmp_path, monkeypatch)
     assert Path(job["staging_path"]).is_symlink()
     assert Path(job["arr_file_path"]).is_symlink()
     assert Path(job["arr_file_path"]).resolve() == media_file.resolve()
+
+
+
+def test_poller_disables_deleted_remote_torrents(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    main.store.replace_all(
+        {
+            "stalejob": {
+                "torrent_id": "stalejob",
+                "rd_torrent_id": "missing-rd-id",
+                "status": "downloading",
+                "category": "sonarr",
+                "raw": {},
+            }
+        }
+    )
+
+    monkeypatch.setattr(main.rd_client, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        main.rd_client,
+        "torrent_info",
+        lambda torrent_id: (_ for _ in ()).throw(RuntimeError("RD info failed for missing-rd-id: 404 {\"error\": \"unknown_ressource\"}")),
+    )
+
+    main.poller.poll_once()
+
+    job = main.store.get("stalejob")
+    assert job is not None
+    assert job["polling_disabled"] is True
 
 
 

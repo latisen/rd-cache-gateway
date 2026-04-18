@@ -9,6 +9,7 @@ from urllib.parse import unquote, urljoin, urlparse
 
 import requests
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from app.api_qbit import (
@@ -203,12 +204,6 @@ def _add_magnet_job(magnet_uri: str, category: str, *, raise_on_error: bool = Fa
         info = fetch_rd_info_raw(rd_id)
         logger.info("ADD linked temp_id=%s rd_id=%s", temp_id, rd_id)
         job_id, job = _finalize_job(temp_id, rd_id, info, category, "magnet", client_hash=client_hash)
-        if job.get("status") == "ready":
-            try:
-                poller.poll_once()
-                job = store.get(job_id) or job
-            except Exception:
-                logger.exception("ADD immediate staging failed job_id=%s", job_id)
         return job_id, job
     except Exception as exc:
         logger.exception("ADD failed temp_id=%s", temp_id)
@@ -242,12 +237,6 @@ def _add_torrent_file_job(
         info = fetch_rd_info_raw(rd_id)
         logger.info("ADD linked temp_id=%s rd_id=%s", temp_id, rd_id)
         job_id, job = _finalize_job(temp_id, rd_id, info, category, "torrent_file", client_hash=client_hash)
-        if job.get("status") == "ready":
-            try:
-                poller.poll_once()
-                job = store.get(job_id) or job
-            except Exception:
-                logger.exception("ADD immediate staging failed job_id=%s", job_id)
         return job_id, job
     except Exception as exc:
         logger.exception("ADD failed temp_id=%s", temp_id)
@@ -465,12 +454,17 @@ async def qbit_torrents_add(
 
     for entry in entries:
         try:
-            resolved = resolve_add_url(entry)
+            resolved = await run_in_threadpool(resolve_add_url, entry)
             if resolved.get("kind") == "magnet":
-                _add_magnet_job(str(resolved["value"]), job_category)
+                await run_in_threadpool(_add_magnet_job, str(resolved["value"]), job_category)
                 accepted_any = True
             elif resolved.get("kind") == "torrent_file":
-                _add_torrent_file_job(bytes(resolved["content"]), str(resolved.get("filename") or "remote.torrent"), job_category)
+                await run_in_threadpool(
+                    _add_torrent_file_job,
+                    bytes(resolved["content"]),
+                    str(resolved.get("filename") or "remote.torrent"),
+                    job_category,
+                )
                 accepted_any = True
         except Exception:
             logger.exception("QBIT add failed for entry=%s", entry)
