@@ -130,6 +130,11 @@ def _boolish(value: str | None) -> bool:
 def _create_placeholder_job(name: str, category: str, source: str, seed: str, preferred_id: str | None = None) -> str:
     temp_id = (preferred_id or temporary_job_id_from_text(f"{seed}|{now_utc_iso()}"))
     client_hash = str(preferred_id or temp_id).upper()
+
+    existing = store.get(temp_id)
+    if existing:
+        cleanup_staging_for_job(temp_id, settings.staging_root, settings.visible_staging_root)
+
     store.merge(
         temp_id,
         {
@@ -144,6 +149,18 @@ def _create_placeholder_job(name: str, category: str, source: str, seed: str, pr
             "category": category,
             "last_error": None,
             "source": source,
+            "source_path": None,
+            "staging_path": None,
+            "arr_path": None,
+            "arr_file_path": None,
+            "arr_ready_reason": None,
+            "arr_ready_details": None,
+            "arr_refresh_command": None,
+            "arr_scan_command": None,
+            "polling_disabled": False,
+            "deleted_by_client": False,
+            "deleted_at": None,
+            "imported_at": None,
         },
     )
     return temp_id
@@ -188,6 +205,9 @@ def _finalize_job(
             "category": category,
             "last_error": None,
             "source": source,
+            "polling_disabled": False,
+            "deleted_by_client": False,
+            "deleted_at": None,
         },
     )
     return job_id, job

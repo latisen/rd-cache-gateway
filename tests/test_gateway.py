@@ -272,6 +272,58 @@ def test_cached_download_add_does_not_run_global_poll_inline(tmp_path, monkeypat
 
 
 
+def test_readding_same_hash_clears_stale_poller_state(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    main.store.replace_all(
+        {
+            REAL_HASH: {
+                "torrent_id": REAL_HASH,
+                "client_hash": REAL_HASH.upper(),
+                "rd_torrent_id": "oldrd",
+                "filename": "Old.Release.S01E01.mkv",
+                "status": "imported",
+                "polling_disabled": True,
+                "arr_scan_command": {"id": 99, "status": "completed"},
+                "deleted_by_client": True,
+                "imported_at": "2026-01-01T00:00:00Z",
+            }
+        }
+    )
+
+    monkeypatch.setattr(main, "rd_add_magnet", lambda magnet_uri: "newrd")
+    monkeypatch.setattr(main, "rd_select_all_files", lambda torrent_id: None)
+    monkeypatch.setattr(
+        main,
+        "fetch_rd_info_raw",
+        lambda torrent_id: {
+            "id": torrent_id,
+            "status": "queued",
+            "filename": "Example.Release.S01E01.1080p.mkv",
+            "bytes": 123456789,
+            "files": [],
+        },
+    )
+
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/v2/torrents/add",
+        data={"urls": REAL_MAGNET, "category": "sonarr"},
+    )
+
+    assert response.status_code == 200
+
+    job = main.store.get(REAL_HASH)
+    assert job is not None
+    assert job["rd_torrent_id"] == "newrd"
+    assert job["status"] == "queued"
+    assert job.get("polling_disabled") in (None, False)
+    assert job.get("deleted_by_client") in (None, False)
+    assert job.get("arr_scan_command") is None
+    assert job.get("imported_at") is None
+
+
+
 def test_find_matching_media_file_does_not_pick_wrong_show(tmp_path):
     debrid_root = tmp_path / "debrid"
     debrid_root.mkdir(parents=True, exist_ok=True)
@@ -299,6 +351,22 @@ def test_find_matching_media_file_returns_none_for_wrong_show_only(tmp_path):
 
     info = {
         "filename": "Below Deck Down Under S03E12 Across Frenemy Lines 1080p WEB-DL.mkv",
+    }
+
+    match = find_matching_media_file(info, debrid_root)
+    assert match is None
+
+
+
+def test_find_matching_media_file_returns_none_for_wrong_episode_same_show(tmp_path):
+    debrid_root = tmp_path / "debrid"
+    debrid_root.mkdir(parents=True, exist_ok=True)
+
+    wrong = debrid_root / "Below.Deck.Down.Under.S04E03.The.Boil.Over.1080p.WEB-DL.mkv"
+    wrong.write_bytes(b"x" * 100)
+
+    info = {
+        "filename": "Below Deck Down Under S03E10 A Greek Tragedy 1080p WEB-DL.mkv",
     }
 
     match = find_matching_media_file(info, debrid_root)
