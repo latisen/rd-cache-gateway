@@ -335,7 +335,7 @@ async def lifespan(_: FastAPI):
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.staging_root.mkdir(parents=True, exist_ok=True)
     settings.visible_staging_root.mkdir(parents=True, exist_ok=True)
-    settings.debrid_all_dir.mkdir(parents=True, exist_ok=True)
+    settings.debrid_all_dir.parent.mkdir(parents=True, exist_ok=True)
     if settings.enable_debug_ui:
         live_log_server.start()
     _start_webdav_mount_monitor()
