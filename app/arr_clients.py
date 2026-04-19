@@ -37,6 +37,7 @@ class ArrClient:
             json={"name": "RefreshMonitoredDownloads"},
             timeout=30,
         )
+        logger.info("ARR refresh monitored downloads client=%s -> %s", self.name, response.status_code)
         response.raise_for_status()
         return response.json()
 
@@ -58,6 +59,7 @@ class ArrClient:
             json=payload,
             timeout=30,
         )
+        logger.info("ARR trigger scan client=%s path=%s download_id=%s -> %s", self.name, folder, download_id, response.status_code)
         response.raise_for_status()
         return response.json()
 
@@ -69,6 +71,7 @@ class ArrClient:
             headers={"X-Api-Key": str(self.api_key)},
             timeout=30,
         )
+        logger.info("ARR get command client=%s command_id=%s -> %s", self.name, command_id, response.status_code)
         response.raise_for_status()
         return response.json()
 

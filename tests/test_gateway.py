@@ -45,9 +45,12 @@ def test_healthz_and_empty_qbit_list(tmp_path, monkeypatch):
     assert debug_live.status_code == 200
     assert "rd-cache-gateway live log" in debug_live.text
 
-    direct_live = get_log_view_html("/logs")
-    assert "__LOGS_PATH__" not in direct_live
-    assert "/logs?limit=500" in direct_live
+    direct_live = get_log_view_html()
+    assert "connecting" not in direct_live.lower()
+    assert "auto-refreshes every" in direct_live.lower()
+
+    debug_text = client.get("/debug/logs.txt")
+    assert debug_text.status_code == 200
 
 
 def test_falls_back_when_data_dir_is_not_writable(tmp_path, monkeypatch):

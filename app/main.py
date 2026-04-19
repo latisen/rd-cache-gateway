@@ -302,7 +302,13 @@ def debug_logs(limit: int = 300) -> dict:
 
 @app.get("/debug/live", response_class=HTMLResponse)
 def debug_live() -> str:
-    return get_log_view_html("/debug/logs")
+    return get_log_view_html()
+
+
+@app.get("/debug/logs.txt", response_class=PlainTextResponse)
+def debug_logs_text(limit: int = 300) -> str:
+    entries = get_recent_logs(limit)
+    return "\n".join(item.get("formatted") or item.get("message") or "" for item in entries)
 
 
 @app.get("/debug/status")

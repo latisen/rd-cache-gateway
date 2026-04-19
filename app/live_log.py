@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
@@ -49,49 +50,37 @@ def get_recent_logs(limit: int = 300) -> list[dict[str, Any]]:
         return list(_BUFFER)[-bounded:]
 
 
-def get_log_view_html(logs_path: str = "/logs") -> str:
-    return _HTML.replace("__LOGS_PATH__", logs_path)
+def get_log_view_html(limit: int = 500, refresh_seconds: int = 2) -> str:
+    entries = get_recent_logs(limit)
+    lines = "\n".join(item.get("formatted") or item.get("message") or "" for item in entries)
+    if not lines:
+        lines = "Waiting for log events..."
 
-
-_HTML = """<!doctype html>
+    return f"""<!doctype html>
 <html>
 <head>
   <meta charset=\"utf-8\" />
+  <meta http-equiv=\"refresh\" content=\"{max(1, refresh_seconds)}\" />
   <title>rd-cache-gateway live log</title>
   <style>
-    body { background: #0b1020; color: #e5e7eb; font-family: monospace; margin: 0; }
-    header { padding: 12px 16px; background: #111827; position: sticky; top: 0; }
-    h1 { font-size: 16px; margin: 0 0 4px; }
-    #status { color: #93c5fd; }
-    pre { white-space: pre-wrap; word-break: break-word; margin: 0; padding: 16px; }
+    body {{ background: #0b1020; color: #e5e7eb; font-family: monospace; margin: 0; }}
+    header {{ padding: 12px 16px; background: #111827; position: sticky; top: 0; }}
+    h1 {{ font-size: 16px; margin: 0 0 4px; }}
+    .status {{ color: #86efac; }}
+    .hint {{ color: #93c5fd; font-size: 12px; }}
+    pre {{ white-space: pre-wrap; word-break: break-word; margin: 0; padding: 16px; }}
+    a {{ color: #93c5fd; }}
   </style>
 </head>
 <body>
   <header>
     <h1>rd-cache-gateway live log</h1>
-    <div id=\"status\">connecting…</div>
+    <div class=\"status\">live</div>
+    <div class=\"hint\">Auto-refreshes every {max(1, refresh_seconds)}s</div>
   </header>
-  <pre id=\"log\"></pre>
-  <script>
-    const logEl = document.getElementById('log');
-    const statusEl = document.getElementById('status');
-    async function refresh() {
-      try {
-        const response = await fetch('__LOGS_PATH__?limit=500', { cache: 'no-store' });
-        const data = await response.json();
-        logEl.textContent = data.entries.map(x => x.formatted).join('\n');
-        statusEl.textContent = 'live';
-        window.scrollTo(0, document.body.scrollHeight);
-      } catch (err) {
-        statusEl.textContent = 'disconnected';
-      }
-    }
-    refresh();
-    setInterval(refresh, 1500);
-  </script>
+  <pre>{html.escape(lines)}</pre>
 </body>
-</html>
-"""
+</html>"""
 
 
 class _LogRequestHandler(BaseHTTPRequestHandler):
@@ -119,7 +108,7 @@ class _LogRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path in {"/", "/index.html"}:
-            self._send_html(get_log_view_html("/logs"))
+            self._send_html(get_log_view_html())
             return
 
         if parsed.path == "/logs":

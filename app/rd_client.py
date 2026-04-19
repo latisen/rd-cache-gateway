@@ -40,6 +40,7 @@ class RealDebridClient:
             data={"magnet": magnet_uri},
             timeout=self.timeout,
         )
+        logger.info("RD add magnet -> %s", response.status_code)
         if response.status_code not in {200, 201}:
             raise RuntimeError(f"RD addMagnet failed: {response.status_code} {response.text}")
         payload = response.json()
@@ -56,6 +57,7 @@ class RealDebridClient:
             files={"file": (filename or "upload.torrent", content, "application/x-bittorrent")},
             timeout=self.timeout,
         )
+        logger.info("RD add torrent file -> %s", response.status_code)
         if response.status_code not in {200, 201}:
             raise RuntimeError(f"RD addTorrent failed: {response.status_code} {response.text}")
         payload = response.json()
@@ -72,6 +74,7 @@ class RealDebridClient:
             data={"files": "all"},
             timeout=self.timeout,
         )
+        logger.info("RD select all files torrent_id=%s -> %s", torrent_id, response.status_code)
         if response.status_code not in {200, 204}:
             raise RuntimeError(f"RD selectFiles failed: {response.status_code} {response.text}")
 
@@ -82,6 +85,7 @@ class RealDebridClient:
             headers=self._headers(),
             timeout=self.timeout,
         )
+        logger.info("RD poll torrent_id=%s -> %s", torrent_id, response.status_code)
         if response.status_code != 200:
             raise RuntimeError(f"RD info failed for {torrent_id}: {response.status_code} {response.text}")
         return response.json()
@@ -93,5 +97,6 @@ class RealDebridClient:
             headers=self._headers(),
             timeout=self.timeout,
         )
+        logger.info("RD delete torrent_id=%s -> %s", torrent_id, response.status_code)
         if response.status_code not in {200, 204}:
             raise RuntimeError(f"RD delete failed for {torrent_id}: {response.status_code} {response.text}")
