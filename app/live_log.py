@@ -216,11 +216,11 @@ class _LogRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path in {"/", "/index.html"}:
+        if parsed.path in {"/", "/index.html", "/debug/live"}:
             self._send_html(get_log_view_html())
             return
 
-        if parsed.path == "/logs":
+        if parsed.path in {"/logs", "/debug/logs"}:
             params = parse_qs(parsed.query)
             try:
                 limit = int((params.get("limit") or ["300"])[0])
@@ -229,12 +229,23 @@ class _LogRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"entries": get_recent_logs(limit)})
             return
 
-        if parsed.path == "/jobs":
+        if parsed.path == "/debug/logs.txt":
+            data = "\n".join(item.get("formatted") or item.get("message") or "" for item in get_recent_logs())
+            payload = data.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+
+        if parsed.path in {"/jobs", "/debug/jobs"}:
             self._send_json({"jobs": get_jobs_snapshot()})
             return
 
-        if parsed.path == "/healthz":
-            self._send_json({"status": "ok"})
+        if parsed.path in {"/healthz", "/debug/status"}:
+            self._send_json({"status": "ok", "entries": len(get_recent_logs()), "jobs": len(get_jobs_snapshot())})
             return
 
         self._send_json({"error": "not_found"}, status=404)

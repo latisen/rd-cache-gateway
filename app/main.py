@@ -351,6 +351,11 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
 
 
+@app.get("/", include_in_schema=False)
+def root_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/debug/live", status_code=307)
+
+
 @app.middleware("http")
 async def log_http_requests(request: Request, call_next):
     path = request.url.path

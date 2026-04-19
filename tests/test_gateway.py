@@ -30,6 +30,10 @@ def test_healthz_and_empty_qbit_list(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
     client = TestClient(main.app)
 
+    root = client.get("/", follow_redirects=False)
+    assert root.status_code in {302, 307}
+    assert root.headers["location"] == "/debug/live"
+
     health = client.get("/healthz")
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
