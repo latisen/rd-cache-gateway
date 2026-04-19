@@ -12,6 +12,7 @@ class Settings:
     app_version: str
     data_dir: Path
     debrid_all_dir: Path
+    visible_debrid_all_dir: Path
     staging_root: Path
     visible_staging_root: Path
     poll_interval: int
@@ -56,12 +57,14 @@ def get_settings() -> Settings:
     debrid_provider = "torbox"
     debrid_token = torbox_token
     default_debrid_dir = "/mnt/torbox/webdav/__all__"
+    default_visible_debrid_dir = "/data/torbox/webdav/__all__"
 
     return Settings(
         app_name="rd-cache-gateway",
         app_version=os.getenv("APP_VERSION", "0.9.0"),
         data_dir=Path(os.getenv("DATA_DIR", "./data")).expanduser(),
         debrid_all_dir=Path(os.getenv("DEBRID_ALL_DIR", default_debrid_dir)).expanduser(),
+        visible_debrid_all_dir=Path(os.getenv("DEBRID_VISIBLE_ALL_DIR", default_visible_debrid_dir)).expanduser(),
         staging_root=Path(
             os.getenv("STAGING_ROOT", "/srv/media/data/downloads/rd-cache-gateway")
         ).expanduser(),

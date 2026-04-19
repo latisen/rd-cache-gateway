@@ -25,7 +25,7 @@ spec:
           command:
             - sh
             - -c
-            - mkdir -p /config /data/downloads/rd-cache-gateway /srv/media/data/downloads/rd-cache-gateway /mnt/torbox/webdav && chown -R 1000:1000 /config /data /srv/media/data /mnt/torbox
+            - mkdir -p /config /data/downloads/rd-cache-gateway /data/torbox/webdav /srv/media/data/downloads/rd-cache-gateway /mnt/torbox/webdav && chown -R 1000:1000 /config /data /srv/media/data /mnt/torbox
           securityContext:
             runAsUser: 0
           volumeMounts:
@@ -89,6 +89,8 @@ spec:
               value: "torbox"
             - name: DEBRID_ALL_DIR
               value: "/mnt/torbox/webdav/__all__"
+            - name: DEBRID_VISIBLE_ALL_DIR
+              value: "/data/torbox/webdav/__all__"
             - name: WEBDAV_URL
               value: "http://127.0.0.1:8000/dav"
             - name: WEBDAV_MOUNT_CHECK_ENABLED
@@ -190,7 +192,7 @@ spec:
             type: DirectoryOrCreate
         - name: torbox-webdav
           hostPath:
-            path: /srv/media/mnt/torbox/webdav
+            path: /srv/media/data/torbox/webdav
             type: DirectoryOrCreate
         - name: dev-fuse
           hostPath:

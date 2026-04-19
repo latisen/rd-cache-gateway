@@ -182,11 +182,20 @@ class JobPoller:
                     )
                     continue
 
+                visible_source_file = source_file
+                try:
+                    candidate_visible_source = self.settings.visible_debrid_all_dir / source_file.relative_to(self.settings.debrid_all_dir)
+                    if candidate_visible_source.exists() or candidate_visible_source.parent.exists():
+                        visible_source_file = candidate_visible_source
+                except ValueError:
+                    visible_source_file = source_file
+
                 staging_path, visible_dir, visible_file = create_staging_symlink(
                     job_id,
                     source_file,
                     self.settings.staging_root,
                     self.settings.visible_staging_root,
+                    visible_source_file=visible_source_file,
                 )
                 expected_media_size = extract_expected_media_size(info, source_file)
                 host_ready, host_reason, host_details = check_staging_ready(

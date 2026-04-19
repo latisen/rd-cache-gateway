@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.live_log import get_log_view_html, set_jobs_provider
 from app.rd_client import RealDebridClient
-from app.staging import find_matching_media_file
+from app.staging import create_staging_symlink, find_matching_media_file
 
 
 MAGNET = "magnet:?xt=urn:btih:ABC123&dn=Example.Release.S01E01.1080p"
@@ -691,6 +691,33 @@ def test_poller_records_rd_failure_reason_and_stops_repolling(tmp_path, monkeypa
     assert job["polling_disabled"] is True
     assert "magnet_error" in (job.get("last_error") or "")
     assert "not_cached_or_dead" in (job.get("last_error") or "")
+
+
+
+def test_create_staging_symlink_uses_visible_source_for_arr_import(tmp_path):
+    source_host = tmp_path / "mnt" / "torbox" / "webdav" / "__all__" / "Episode.S01E01.mkv"
+    source_host.parent.mkdir(parents=True, exist_ok=True)
+    source_host.write_bytes(b"x" * 2048)
+
+    visible_source = tmp_path / "data" / "torbox" / "webdav" / "__all__" / "Episode.S01E01.mkv"
+    visible_source.parent.mkdir(parents=True, exist_ok=True)
+    visible_source.write_bytes(b"x" * 2048)
+
+    staging_root = tmp_path / "srv" / "media" / "data" / "downloads" / "rd-cache-gateway"
+    visible_root = tmp_path / "data" / "downloads" / "rd-cache-gateway"
+
+    staging_path, _, visible_file = create_staging_symlink(
+        "rdvisible",
+        source_host,
+        staging_root,
+        visible_root,
+        visible_source_file=visible_source,
+    )
+
+    assert staging_path.is_symlink()
+    assert visible_file.is_symlink()
+    assert staging_path.resolve() == source_host.resolve()
+    assert visible_file.resolve() == visible_source.resolve()
 
 
 

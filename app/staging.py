@@ -218,13 +218,15 @@ def create_staging_symlink(
     source_file: Path,
     staging_root: Path,
     visible_root: Path,
+    visible_source_file: Path | None = None,
 ) -> tuple[Path, Path, Path]:
     folder_name = stage_folder_name(torrent_id, source_file)
     host_dir = staging_root / folder_name
     visible_dir = visible_root / folder_name
+    visible_target = visible_source_file or source_file
 
     link_path = _refresh_symlink(host_dir / source_file.name, source_file)
-    visible_file = _refresh_symlink(visible_dir / source_file.name, source_file)
+    visible_file = _refresh_symlink(visible_dir / source_file.name, visible_target)
 
     return link_path, visible_dir, visible_file
 
