@@ -149,26 +149,6 @@ spec:
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 6
-        - name: torbox-webdav-mounter
-          image: rd-cache-gateway:local
-          imagePullPolicy: IfNotPresent
-          command:
-            - sh
-            - -lc
-            - MOUNT_POINT=/mnt/torbox/webdav WEBDAV_URL=http://127.0.0.1:8000/dav UID_VALUE=1000 GID_VALUE=1000 DAEMON_MODE=0 /app/scripts/mount_torbox_webdav.sh
-          securityContext:
-            privileged: true
-            allowPrivilegeEscalation: true
-            capabilities:
-              add:
-                - SYS_ADMIN
-                - MKNOD
-          volumeMounts:
-            - name: torbox-webdav
-              mountPath: /mnt/torbox/webdav
-              mountPropagation: Bidirectional
-            - name: dev-fuse
-              mountPath: /dev/fuse
       volumes:
         - name: app-data
           hostPath:
@@ -182,10 +162,6 @@ spec:
           hostPath:
             path: /srv/media/mnt/torbox/webdav
             type: DirectoryOrCreate
-        - name: dev-fuse
-          hostPath:
-            path: /dev/fuse
-            type: CharDevice
 ---
 apiVersion: v1
 kind: Service
