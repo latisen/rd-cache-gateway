@@ -399,6 +399,22 @@ def test_find_matching_media_file_does_not_pick_wrong_show(tmp_path):
 
 
 
+def test_find_matching_media_file_matches_same_episode_with_season_episode_words(tmp_path):
+    debrid_root = tmp_path / "debrid"
+    debrid_root.mkdir(parents=True, exist_ok=True)
+
+    correct = debrid_root / "Below Deck Down Under - Season 3 Episode 9 - Foam Sick 1080p WEB-DL.mkv"
+    correct.write_bytes(b"x" * 100)
+
+    info = {
+        "filename": "Below Deck Down Under S03E09 Foam Sick 1080p AMZN WEB-DL DDP2 0 H 264-NTb",
+    }
+
+    match = find_matching_media_file(info, debrid_root)
+    assert match == correct
+
+
+
 def test_find_matching_media_file_returns_none_for_wrong_show_only(tmp_path):
     debrid_root = tmp_path / "debrid"
     debrid_root.mkdir(parents=True, exist_ok=True)

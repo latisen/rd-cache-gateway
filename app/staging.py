@@ -26,19 +26,31 @@ def stage_folder_name(torrent_id: str, source_file: Path) -> str:
     return f"{base}-{suffix}"
 
 
+def _canonicalize_episode_patterns(value: str) -> str:
+    def repl(match: re.Match[str]) -> str:
+        season = int(match.group(1))
+        episode = int(match.group(2))
+        return f"s{season:02d}e{episode:02d}"
+
+    normalized = re.sub(r"(?i)\bseason\W*0*(\d{1,2})\W*episode\W*0*(\d{1,2})\b", repl, value)
+    normalized = re.sub(r"(?i)\bs\W*0*(\d{1,2})\W*e\W*0*(\d{1,2})\b", repl, normalized)
+    normalized = re.sub(r"(?i)\b0*(\d{1,2})x0*(\d{1,2})\b", repl, normalized)
+    return normalized
+
+
 def normalize_name(value: str) -> str:
-    value = Path(value).name.lower().strip()
+    value = _canonicalize_episode_patterns(Path(value).name.lower().strip())
     value = re.sub(r"\.[a-z0-9]{2,4}$", "", value)
     value = re.sub(r"[^a-z0-9]+", "", value)
     return value
 
 
 def extract_name_words(value: str) -> set[str]:
-    stem = Path(value).stem.lower()
+    stem = _canonicalize_episode_patterns(Path(value).stem.lower())
     stem = re.sub(r"s\d{2}e\d{2}", " ", stem, flags=re.IGNORECASE)
     words = re.split(r"[^a-z0-9]+", stem)
-    ignored = {"1080p", "720p", "2160p", "web", "dl", "webrip", "amzn", "ddp2", "ddp5", "h", "264", "265", "x264", "x265", "ntb", "kitsune", "mkv"}
-    return {word for word in words if len(word) >= 3 and word not in ignored}
+    ignored = {"1080p", "720p", "2160p", "web", "dl", "webrip", "amzn", "ddp2", "ddp5", "h", "264", "265", "x264", "x265", "ntb", "kitsune", "mkv", "season", "episode"}
+    return {word for word in words if len(word) >= 3 and word not in ignored and not word.isdigit()}
 
 
 def _word_overlap(a: set[str], b: set[str]) -> int:
@@ -68,7 +80,8 @@ def _get_media_candidates(root: Path) -> list[Path]:
 
 
 def extract_episode_token(value: str) -> str | None:
-    match = re.search(r"(s\d{2}e\d{2})", value, re.IGNORECASE)
+    normalized = _canonicalize_episode_patterns(str(value))
+    match = re.search(r"(s\d{2}e\d{2})", normalized, re.IGNORECASE)
     return match.group(1).lower() if match else None
 
 
