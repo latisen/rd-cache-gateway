@@ -89,6 +89,14 @@ spec:
               value: "torbox"
             - name: DEBRID_ALL_DIR
               value: "/mnt/torbox/webdav/__all__"
+            - name: WEBDAV_URL
+              value: "http://127.0.0.1:8000/dav"
+            - name: WEBDAV_MOUNT_CHECK_ENABLED
+              value: "1"
+            - name: WEBDAV_MOUNT_CHECK_DELAY
+              value: "5"
+            - name: WEBDAV_MOUNT_CHECK_TIMEOUT
+              value: "25"
             - name: ENABLE_DEBUG_UI
               value: "1"
             - name: DEBUG_WEB_PORT
@@ -115,6 +123,20 @@ spec:
               name: http
             - containerPort: 8888
               name: debug
+          securityContext:
+            privileged: true
+            allowPrivilegeEscalation: true
+            capabilities:
+              add:
+                - SYS_ADMIN
+                - MKNOD
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - sh
+                  - -lc
+                  - MOUNT_POINT=/mnt/torbox/webdav WEBDAV_URL=http://127.0.0.1:8000/dav UID_VALUE=1000 GID_VALUE=1000 /app/scripts/mount_torbox_webdav.sh >/proc/1/fd/1 2>/proc/1/fd/2 || true
           volumeMounts:
             - name: app-data
               mountPath: /config
@@ -124,7 +146,9 @@ spec:
               mountPath: /srv/media/data
             - name: torbox-webdav
               mountPath: /mnt/torbox/webdav
-              mountPropagation: HostToContainer
+              mountPropagation: Bidirectional
+            - name: dev-fuse
+              mountPath: /dev/fuse
           readinessProbe:
             httpGet:
               path: /healthz
@@ -154,6 +178,10 @@ spec:
           hostPath:
             path: /srv/media/mnt/torbox/webdav
             type: DirectoryOrCreate
+        - name: dev-fuse
+          hostPath:
+            path: /dev/fuse
+            type: CharDevice
 ---
 apiVersion: v1
 kind: Service

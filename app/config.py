@@ -27,6 +27,10 @@ class Settings:
     enable_poller: bool
     enable_debug_ui: bool
     debug_web_port: int
+    webdav_url: str | None
+    webdav_mount_check_enabled: bool
+    webdav_mount_check_delay: int
+    webdav_mount_check_timeout: int
 
     @property
     def jobs_file(self) -> Path:
@@ -80,4 +84,8 @@ def get_settings() -> Settings:
         enable_poller=_env_bool("ENABLE_POLLER", bool(debrid_token)),
         enable_debug_ui=_env_bool("ENABLE_DEBUG_UI", True),
         debug_web_port=max(1, int(os.getenv("DEBUG_WEB_PORT", "8888"))),
+        webdav_url=os.getenv("WEBDAV_URL", "http://127.0.0.1:8000/dav"),
+        webdav_mount_check_enabled=_env_bool("WEBDAV_MOUNT_CHECK_ENABLED", True),
+        webdav_mount_check_delay=max(0, int(os.getenv("WEBDAV_MOUNT_CHECK_DELAY", "5"))),
+        webdav_mount_check_timeout=max(0, int(os.getenv("WEBDAV_MOUNT_CHECK_TIMEOUT", "25"))),
     )

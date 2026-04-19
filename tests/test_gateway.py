@@ -54,6 +54,20 @@ def test_healthz_and_empty_qbit_list(tmp_path, monkeypatch):
     assert debug_text.status_code == 200
 
 
+def test_webdav_mount_sample_detects_empty_and_ready(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    empty_dir = tmp_path / "empty-webdav"
+    empty_dir.mkdir(parents=True, exist_ok=True)
+    assert main._webdav_mount_sample(empty_dir) is None
+
+    ready_dir = tmp_path / "ready-webdav"
+    ready_dir.mkdir(parents=True, exist_ok=True)
+    (ready_dir / "episode.mkv").write_bytes(b"x")
+    assert main._webdav_mount_sample(ready_dir) == "episode.mkv"
+
+
+
 def test_live_dashboard_renders_job_stats():
     set_jobs_provider(
         lambda: {

@@ -19,7 +19,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR ${APP_HOME}
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && apt-get install -y --no-install-recommends curl ca-certificates fuse3 rclone \
+    && sed -i 's/^#user_allow_other$/user_allow_other/' /etc/fuse.conf \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
@@ -27,11 +28,12 @@ RUN python -m pip install --upgrade pip \
     && python -m pip install -r requirements.txt
 
 COPY app ./app
+COPY scripts ./scripts
 
 RUN groupadd --gid 1000 appuser \
     && useradd --create-home --uid 1000 --gid 1000 appuser \
-    && mkdir -p /config /data/downloads/rd-cache-gateway /srv/media/data/downloads/rd-cache-gateway \
-    && chown -R appuser:appuser /app /config /data /srv/media/data
+    && mkdir -p /config /data/downloads/rd-cache-gateway /srv/media/data/downloads/rd-cache-gateway /mnt/torbox/webdav \
+    && chown -R appuser:appuser /app /config /data /srv/media/data /mnt/torbox
 
 USER appuser
 

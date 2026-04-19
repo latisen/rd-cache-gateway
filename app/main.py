@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -56,6 +57,51 @@ set_jobs_provider(store.all)
 rd_client = RealDebridClient(settings.rd_token, provider=settings.debrid_provider)
 poller = JobPoller(store=store, rd_client=rd_client, settings=settings)
 live_log_server = LiveLogServer(port=settings.debug_web_port)
+
+
+def _webdav_mount_sample(path: Path) -> str | None:
+    try:
+        if not path.exists() or not path.is_dir():
+            return None
+        for child in sorted(path.iterdir(), key=lambda item: item.name.lower()):
+            return child.name
+    except Exception:
+        logger.exception("WEBDAV sample check failed path=%s", path)
+    return None
+
+
+def _start_webdav_mount_monitor() -> None:
+    if settings.debrid_provider != "torbox" or not settings.webdav_mount_check_enabled:
+        return
+
+    check_path = settings.debrid_all_dir
+    delay = settings.webdav_mount_check_delay
+    timeout = settings.webdav_mount_check_timeout
+
+    def worker() -> None:
+        if delay:
+            time.sleep(delay)
+
+        sample = _webdav_mount_sample(check_path)
+        if sample:
+            logger.info("WEBDAV mount ready path=%s sample=%s", check_path, sample)
+            return
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            sample = _webdav_mount_sample(check_path)
+            if sample:
+                logger.info("WEBDAV mount ready path=%s sample=%s", check_path, sample)
+                return
+            time.sleep(1)
+
+        logger.warning(
+            "WEBDAV mount empty path=%s after %ss; symlink-only imports will fail until the mount is populated",
+            check_path,
+            timeout,
+        )
+
+    threading.Thread(target=worker, daemon=True, name="webdav-mount-check").start()
 
 
 def qbit_ok_plain(text: str = "Ok.") -> Response:
@@ -288,8 +334,11 @@ def _resolve_job(torrent_id: str) -> tuple[str, dict]:
 async def lifespan(_: FastAPI):
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.staging_root.mkdir(parents=True, exist_ok=True)
+    settings.visible_staging_root.mkdir(parents=True, exist_ok=True)
+    settings.debrid_all_dir.mkdir(parents=True, exist_ok=True)
     if settings.enable_debug_ui:
         live_log_server.start()
+    _start_webdav_mount_monitor()
     poller.start()
     yield
     poller.stop()
@@ -344,6 +393,8 @@ def debug_status() -> dict:
         "debrid_provider": settings.debrid_provider,
         "debrid_all_dir": str(settings.debrid_all_dir),
         "webdav_path": "/dav/__all__/",
+        "webdav_url": settings.webdav_url,
+        "webdav_mount_sample": _webdav_mount_sample(settings.debrid_all_dir),
         "poller_enabled": settings.enable_poller,
         "debug_ui_enabled": settings.enable_debug_ui,
         "debug_web_port": settings.debug_web_port,
