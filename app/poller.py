@@ -119,7 +119,17 @@ class JobPoller:
                 if not source_file:
                     patch["status"] = "ready"
                     patch["arr_ready_reason"] = "source_not_found"
+                    patch["arr_ready_details"] = {
+                        "wanted_filename": info.get("filename"),
+                        "search_root": str(self.settings.debrid_all_dir),
+                    }
                     self.store.merge(job_id, patch)
+                    logger.warning(
+                        "STAGE source not found torrent_id=%s filename=%s root=%s",
+                        job_id,
+                        info.get("filename"),
+                        self.settings.debrid_all_dir,
+                    )
                     continue
 
                 staging_path, visible_dir, visible_file = create_staging_symlink(

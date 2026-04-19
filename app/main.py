@@ -25,7 +25,7 @@ from app.api_qbit import (
 )
 from app.config import get_settings
 from app.jobs_store import JobStore
-from app.live_log import LiveLogServer, get_log_view_html, get_recent_logs, install_live_log_handler
+from app.live_log import LiveLogServer, get_log_view_html, get_recent_logs, install_live_log_handler, set_jobs_provider
 from app.models import (
     CreateJobRequest,
     CreateJobResponse,
@@ -50,6 +50,7 @@ logger = logging.getLogger(__name__)
 get_settings.cache_clear()
 settings = get_settings()
 store = JobStore(settings.jobs_file)
+set_jobs_provider(store.all)
 rd_client = RealDebridClient(settings.rd_token)
 poller = JobPoller(store=store, rd_client=rd_client, settings=settings)
 live_log_server = LiveLogServer(port=settings.debug_web_port)

@@ -48,7 +48,7 @@ def get_settings() -> Settings:
     rd_token = os.getenv("RD_TOKEN")
     return Settings(
         app_name="rd-cache-gateway",
-        app_version=os.getenv("APP_VERSION", "0.8.0"),
+        app_version=os.getenv("APP_VERSION", "0.9.0"),
         data_dir=Path(os.getenv("DATA_DIR", "./data")).expanduser(),
         debrid_all_dir=Path(
             os.getenv("DEBRID_ALL_DIR", "/mnt/debrid/decypharr/realdebrid/__all__")

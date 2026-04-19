@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.live_log import get_log_view_html
+from app.live_log import get_log_view_html, set_jobs_provider
 from app.staging import find_matching_media_file
 
 
@@ -51,6 +51,31 @@ def test_healthz_and_empty_qbit_list(tmp_path, monkeypatch):
 
     debug_text = client.get("/debug/logs.txt")
     assert debug_text.status_code == 200
+
+
+def test_live_dashboard_renders_job_stats():
+    set_jobs_provider(
+        lambda: {
+            "job1": {
+                "filename": "Example.Release.S01E01.mkv",
+                "status": "downloading",
+                "rd_status": "downloading",
+                "raw": {
+                    "progress": 55,
+                    "speed": 3145728,
+                    "seeders": 12,
+                    "peers": 34,
+                },
+            }
+        }
+    )
+
+    html_view = get_log_view_html()
+    assert "Active jobs" in html_view
+    assert "Example.Release.S01E01.mkv" in html_view
+    assert "Seeds: 12" in html_view
+    assert "Peers: 34" in html_view
+    assert "Progress: 55%" in html_view
 
 
 def test_falls_back_when_data_dir_is_not_writable(tmp_path, monkeypatch):
@@ -262,6 +287,22 @@ def test_find_matching_media_file_does_not_pick_wrong_show(tmp_path):
 
     match = find_matching_media_file(info, debrid_root)
     assert match == correct
+
+
+
+def test_find_matching_media_file_returns_none_for_wrong_show_only(tmp_path):
+    debrid_root = tmp_path / "debrid"
+    debrid_root.mkdir(parents=True, exist_ok=True)
+
+    wrong = debrid_root / "Blue.Bloods.S03E12.1080p.WEB-DL.mkv"
+    wrong.write_bytes(b"x" * 100)
+
+    info = {
+        "filename": "Below Deck Down Under S03E12 Across Frenemy Lines 1080p WEB-DL.mkv",
+    }
+
+    match = find_matching_media_file(info, debrid_root)
+    assert match is None
 
 
 
