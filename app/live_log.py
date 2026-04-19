@@ -119,7 +119,7 @@ class _LogRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path in {"/", "/index.html"}:
-            self._send_html(_HTML)
+            self._send_html(get_log_view_html("/logs"))
             return
 
         if parsed.path == "/logs":

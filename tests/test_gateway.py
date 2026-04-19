@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.live_log import get_log_view_html
 from app.staging import find_matching_media_file
 
 
@@ -43,6 +44,10 @@ def test_healthz_and_empty_qbit_list(tmp_path, monkeypatch):
     debug_live = client.get("/debug/live")
     assert debug_live.status_code == 200
     assert "rd-cache-gateway live log" in debug_live.text
+
+    direct_live = get_log_view_html("/logs")
+    assert "__LOGS_PATH__" not in direct_live
+    assert "/logs?limit=500" in direct_live
 
 
 def test_falls_back_when_data_dir_is_not_writable(tmp_path, monkeypatch):
