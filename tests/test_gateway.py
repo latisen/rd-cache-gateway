@@ -355,6 +355,29 @@ def test_readding_same_hash_clears_stale_poller_state(tmp_path, monkeypatch):
     assert job.get("imported_at") is None
 
 
+def test_torbox_get_download_url_accepts_hash_identifier(monkeypatch):
+    client = RealDebridClient("torbox-token", provider="torbox")
+
+    monkeypatch.setattr(client, "_torbox_find_item", lambda torrent_id: {"id": 22428583})
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"success": True, "error": None, "detail": "ok", "data": "https://cdn.example/file.mkv"}
+
+    def fake_get(url, params=None, timeout=None):
+        assert params is not None
+        assert params["torrent_id"] == 22428583
+        return FakeResponse()
+
+    monkeypatch.setattr("app.rd_client.requests.get", fake_get)
+
+    url = client.get_download_url(REAL_HASH, 0)
+    assert url == "https://cdn.example/file.mkv"
+
+
+
 def test_provider_is_hard_locked_to_torbox(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("STAGING_ROOT", str(tmp_path / "staging"))

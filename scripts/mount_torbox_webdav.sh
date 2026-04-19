@@ -18,7 +18,7 @@ if mountpoint -q "$MOUNT_POINT"; then
   exit 0
 fi
 
-REMOTE=":webdav,url=${WEBDAV_URL},vendor=other:"
+REMOTE=":webdav,url='${WEBDAV_URL}',vendor=other:"
 DAEMON_MODE="${DAEMON_MODE:-1}"
 
 echo "Mounting $WEBDAV_URL at $MOUNT_POINT"

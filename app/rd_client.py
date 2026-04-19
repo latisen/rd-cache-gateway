@@ -165,9 +165,18 @@ class RealDebridClient:
     def get_download_url(self, torrent_id: str, file_id: str | int | None = None) -> str:
         if self.provider != "torbox":
             raise RuntimeError("WebDAV download URLs are only supported for TorBox")
+
+        if str(torrent_id).isdigit():
+            resolved_torrent_id = int(torrent_id)
+        else:
+            item = self._torbox_find_item(str(torrent_id))
+            if item is None or item.get("id") in {None, ""}:
+                raise RuntimeError(f"TorBox requestdl could not resolve torrent id for {torrent_id}")
+            resolved_torrent_id = int(item.get("id"))
+
         params = {
             "token": str(self.token or ""),
-            "torrent_id": int(torrent_id),
+            "torrent_id": resolved_torrent_id,
             "file_id": int(file_id or 0),
             "zip_link": "false",
             "redirect": "false",
