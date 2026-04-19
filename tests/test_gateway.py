@@ -203,6 +203,37 @@ def test_delete_hides_job_from_qbit_listing(tmp_path, monkeypatch):
     assert info.json() == []
 
 
+def test_ready_job_is_reported_as_completed_to_sonarr(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    main.store.replace_all(
+        {
+            REAL_HASH: {
+                "torrent_id": REAL_HASH,
+                "client_hash": REAL_HASH.upper(),
+                "rd_torrent_id": "tb123",
+                "filename": "Example.Release.S01E01.1080p.mkv",
+                "status": "ready",
+                "category": "sonarr",
+                "raw": {"bytes": 123456789, "progress": 100},
+            }
+        }
+    )
+
+    client = TestClient(main.app)
+    info = client.get("/api/v2/torrents/info")
+    assert info.status_code == 200
+    payload = info.json()
+    assert len(payload) == 1
+    assert payload[0]["state"] == "pausedUP"
+    assert payload[0]["progress"] == 1.0
+
+    props = client.get(f"/api/v2/torrents/properties?hash={REAL_HASH}")
+    assert props.status_code == 200
+    assert props.json()["progress"] == 1.0
+
+
+
 def test_magnet_uses_stable_infohash_for_sonarr_tracking(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 
@@ -233,8 +264,8 @@ def test_magnet_uses_stable_infohash_for_sonarr_tracking(tmp_path, monkeypatch):
     payload = info.json()
     assert len(payload) == 1
     assert payload[0]["hash"] == REAL_HASH
-    assert payload[0]["state"] == "downloading"
-    assert payload[0]["progress"] == 0.99
+    assert payload[0]["state"] == "pausedUP"
+    assert payload[0]["progress"] == 1.0
     assert payload[0]["label"] == "sonarr"
     assert payload[0]["content_path"].endswith("Example.Release.S01E01.1080p.mkv")
 
