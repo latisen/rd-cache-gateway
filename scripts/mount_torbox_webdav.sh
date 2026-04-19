@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env sh
+set -eu
 
 WEBDAV_URL="${WEBDAV_URL:-http://192.168.30.58:8000/dav}"
 MOUNT_POINT="${MOUNT_POINT:-/srv/media/mnt/torbox/webdav}"
@@ -17,7 +17,7 @@ mkdir -p "$MOUNT_POINT"
 TARGET_DIR="$MOUNT_POINT/__all__"
 
 has_real_fuse_mount() {
-  local fstype=""
+  fstype=""
   if command -v findmnt >/dev/null 2>&1; then
     fstype="$(findmnt -T "$MOUNT_POINT" -n -o FSTYPE 2>/dev/null || true)"
   fi
@@ -57,19 +57,18 @@ for attempt in $(seq 1 "$MOUNT_ATTEMPTS"); do
 done
 
 echo "Mounting $WEBDAV_URL at $MOUNT_POINT"
-RCLONE_ARGS=(
-  --read-only
-  --allow-other
-  --dir-cache-time 10s
-  --poll-interval 15s
-  --vfs-cache-mode off
-  --uid "$UID_VALUE"
-  --gid "$GID_VALUE"
-  --umask 002
-)
 
 if [ "$DAEMON_MODE" = "1" ]; then
-  rclone mount "$REMOTE" "$MOUNT_POINT" --daemon "${RCLONE_ARGS[@]}"
+  rclone mount "$REMOTE" "$MOUNT_POINT" \
+    --daemon \
+    --read-only \
+    --allow-other \
+    --dir-cache-time 10s \
+    --poll-interval 15s \
+    --vfs-cache-mode off \
+    --uid "$UID_VALUE" \
+    --gid "$GID_VALUE" \
+    --umask 002
 
   for attempt in $(seq 1 "$MOUNT_ATTEMPTS"); do
     if has_real_fuse_mount && has_visible_entries; then
@@ -83,5 +82,13 @@ if [ "$DAEMON_MODE" = "1" ]; then
   echo "Mount command returned but no usable FUSE-backed files appeared at $TARGET_DIR" >&2
   exit 1
 else
-  exec rclone mount "$REMOTE" "$MOUNT_POINT" "${RCLONE_ARGS[@]}"
+  exec rclone mount "$REMOTE" "$MOUNT_POINT" \
+    --read-only \
+    --allow-other \
+    --dir-cache-time 10s \
+    --poll-interval 15s \
+    --vfs-cache-mode off \
+    --uid "$UID_VALUE" \
+    --gid "$GID_VALUE" \
+    --umask 002
 fi

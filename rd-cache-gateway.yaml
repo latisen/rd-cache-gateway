@@ -153,7 +153,7 @@ spec:
           image: rd-cache-gateway:local
           imagePullPolicy: IfNotPresent
           command:
-            - sh
+            - /bin/sh
             - -lc
             - |
               echo "Starting TorBox WebDAV mounter"
@@ -163,7 +163,7 @@ spec:
                 UID_VALUE=1000 \
                 GID_VALUE=1000 \
                 DAEMON_MODE=0 \
-                sh /app/scripts/mount_torbox_webdav.sh
+                /app/scripts/mount_torbox_webdav.sh
           securityContext:
             privileged: true
             allowPrivilegeEscalation: true
