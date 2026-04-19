@@ -582,6 +582,55 @@ def test_poller_marks_downloaded_job_ready_for_arr_using_media_file_size(tmp_pat
 
 
 
+def test_poller_marks_symlinked_job_ready_for_arr_even_if_virtual_size_differs(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    debrid_root = tmp_path / "debrid"
+    debrid_root.mkdir(parents=True, exist_ok=True)
+    media_file = debrid_root / "Show.Name.S01E02.1080p.mkv"
+    media_file.write_bytes(b"x" * (2 * 1024 * 1024))
+
+    main.store.replace_all(
+        {
+            "rd124": {
+                "torrent_id": "rd124",
+                "rd_torrent_id": "rd124",
+                "filename": media_file.name,
+                "status": "downloading",
+                "category": "sonarr",
+                "raw": {},
+            }
+        }
+    )
+
+    monkeypatch.setattr(main.rd_client, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        main.rd_client,
+        "torrent_info",
+        lambda torrent_id: {
+            "id": torrent_id,
+            "status": "downloaded",
+            "filename": media_file.name,
+            "bytes": 999999,
+            "files": [
+                {
+                    "path": f"/{media_file.name}",
+                    "bytes": (2 * 1024 * 1024) + 321,
+                    "selected": 1,
+                }
+            ],
+        },
+    )
+
+    main.poller.poll_once()
+
+    job = main.store.get("rd124")
+    assert job is not None
+    assert job["status"] in {"ready_for_arr", "scan_pending", "imported"}
+    assert job["arr_ready_reason"].startswith("ready")
+
+
+
 def test_poller_records_rd_failure_reason_and_stops_repolling(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 

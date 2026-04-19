@@ -233,6 +233,13 @@ class JobPoller:
                             patch.update(completed_patch)
 
                 self.store.merge(job_id, patch)
+                if patch["status"] == "staged":
+                    logger.info(
+                        "STAGE pending torrent_id=%s reason=%s details=%s",
+                        job_id,
+                        patch.get("arr_ready_reason"),
+                        patch.get("arr_ready_details"),
+                    )
                 logger.info("POLL updated torrent_id=%s status=%s", job_id, patch['status'])
             except Exception as exc:
                 message = str(exc)

@@ -294,7 +294,10 @@ def check_staging_ready(
         if actual_size < min_bytes:
             return False, "target_too_small", {"actual_size": actual_size, "min_size": min_bytes}
         if expected_size and actual_size != expected_size:
-            return False, "size_mismatch", {"actual_size": actual_size, "expected_size": expected_size}
+            details = {"target": str(target), "actual_size": actual_size, "expected_size": expected_size}
+            if staging_path.is_symlink():
+                return True, "ready_virtual_size_unverified", details
+            return False, "size_mismatch", details
         return True, "ready", {"target": str(target), "actual_size": actual_size}
     except Exception as exc:
         return False, "staging_error", {"error": str(exc)}
