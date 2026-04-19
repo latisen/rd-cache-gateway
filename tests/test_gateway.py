@@ -793,6 +793,50 @@ def test_visible_arr_symlink_is_created_for_sonarr_import(tmp_path, monkeypatch)
 
 
 
+def test_poller_handles_disconnected_webdav_mount_without_crashing(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    main.store.replace_all(
+        {
+            "rdmount": {
+                "torrent_id": "rdmount",
+                "rd_torrent_id": "rdmount",
+                "filename": "Below Deck Down Under S02E17 An Eruption Of Volcanic Proportions 1080p AMZN WEB-",
+                "status": "downloading",
+                "category": "sonarr",
+                "raw": {},
+            }
+        }
+    )
+
+    monkeypatch.setattr(main.rd_client, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        main.rd_client,
+        "torrent_info",
+        lambda torrent_id: {
+            "id": torrent_id,
+            "status": "downloaded",
+            "filename": "Below Deck Down Under S02E17 An Eruption Of Volcanic Proportions 1080p AMZN WEB-",
+            "bytes": 2 * 1024 * 1024,
+            "files": [],
+        },
+    )
+
+    class BrokenPath:
+        def exists(self):
+            raise OSError(107, "Transport endpoint is not connected")
+
+    main.poller.settings = main.poller.settings.__class__(**{**main.poller.settings.__dict__, "debrid_all_dir": BrokenPath()})
+    main.poller.poll_once()
+
+    job = main.store.get("rdmount")
+    assert job is not None
+    assert job["status"] == "ready"
+    assert job["arr_ready_reason"] == "source_not_found"
+    assert "mount_error" in (job.get("arr_ready_details") or {})
+
+
+
 def test_poller_requires_webdav_mount_and_does_not_download_files(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 

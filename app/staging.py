@@ -16,6 +16,7 @@ VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov", ".m4v"}
 _MEDIA_INDEX_TTL = 15
 _MEDIA_INDEX: dict[str, tuple[float, list[Path]]] = {}
 _MEDIA_INDEX_LOCK = threading.Lock()
+_LAST_SCAN_ERROR: dict[str, str] = {}
 
 
 def stage_folder_name(torrent_id: str, source_file: Path) -> str:
@@ -140,8 +141,15 @@ def _pick_best_named_match(wanted_name: str, candidates: list[tuple[str, Any]]) 
 
 
 def find_matching_media_file(info: dict, root: Path) -> Path | None:
-    if not root.exists():
-        logger.warning("STAGE source root missing root=%s", root)
+    cache_key = str(root)
+    try:
+        if not root.exists():
+            logger.warning("STAGE source root missing root=%s", root)
+            _LAST_SCAN_ERROR.pop(cache_key, None)
+            return None
+    except OSError as exc:
+        logger.warning("STAGE source root unavailable root=%s error=%s", root, exc)
+        _LAST_SCAN_ERROR[cache_key] = str(exc)
         return None
 
     filename = info.get("filename") or info.get("original_filename")
@@ -167,10 +175,18 @@ def find_matching_media_file(info: dict, root: Path) -> Path | None:
     candidates = _get_media_candidates(root)
     match = _pick_best_named_match(wanted_name, [(path.name, path) for path in candidates])
     if match is not None:
+        _LAST_SCAN_ERROR.pop(cache_key, None)
         return match
 
     refreshed_candidates = _get_media_candidates(root, force_refresh=True)
-    return _pick_best_named_match(wanted_name, [(path.name, path) for path in refreshed_candidates])
+    refreshed_match = _pick_best_named_match(wanted_name, [(path.name, path) for path in refreshed_candidates])
+    if refreshed_match is not None:
+        _LAST_SCAN_ERROR.pop(cache_key, None)
+    return refreshed_match
+
+
+def get_last_scan_error(root: Path) -> str | None:
+    return _LAST_SCAN_ERROR.get(str(root))
 
 
 def find_matching_media_entry(info: dict) -> dict | None:

@@ -13,6 +13,7 @@ from app.staging import (
     create_staging_symlink,
     extract_expected_media_size,
     find_matching_media_file,
+    get_last_scan_error,
 )
 
 logger = logging.getLogger(__name__)
@@ -169,10 +170,14 @@ class JobPoller:
                 if not source_file:
                     patch["status"] = "ready"
                     patch["arr_ready_reason"] = "source_not_found"
-                    patch["arr_ready_details"] = {
+                    details = {
                         "wanted_filename": info.get("filename"),
                         "search_root": str(self.settings.debrid_all_dir),
                     }
+                    mount_error = get_last_scan_error(self.settings.debrid_all_dir)
+                    if mount_error:
+                        details["mount_error"] = mount_error
+                    patch["arr_ready_details"] = details
                     self.store.merge(job_id, patch)
                     logger.warning(
                         "STAGE source not found torrent_id=%s filename=%s root=%s",
