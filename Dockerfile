@@ -30,7 +30,8 @@ RUN python -m pip install --upgrade pip \
 COPY app ./app
 COPY scripts ./scripts
 
-RUN groupadd --gid 1000 appuser \
+RUN chmod +x /app/scripts/*.sh \
+    && groupadd --gid 1000 appuser \
     && useradd --create-home --uid 1000 --gid 1000 appuser \
     && mkdir -p /config /data/downloads/rd-cache-gateway /srv/media/data/downloads/rd-cache-gateway /mnt/torbox/webdav \
     && chown -R appuser:appuser /app /config /data /srv/media/data /mnt/torbox

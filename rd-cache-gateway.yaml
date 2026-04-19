@@ -163,12 +163,14 @@ spec:
                 UID_VALUE=1000 \
                 GID_VALUE=1000 \
                 DAEMON_MODE=1 \
-                /app/scripts/mount_torbox_webdav.sh || true
+                sh /app/scripts/mount_torbox_webdav.sh || true
                 sleep 30
               done
           securityContext:
             privileged: true
             allowPrivilegeEscalation: true
+            runAsUser: 0
+            runAsGroup: 0
             capabilities:
               add:
                 - SYS_ADMIN
