@@ -146,12 +146,14 @@ def find_matching_media_file(info: dict, root: Path) -> Path | None:
     wanted_name = Path(filename).name
 
     direct = root / wanted_name
-    if direct.is_file():
+    if direct.is_file() and direct.suffix.lower() in VIDEO_EXTENSIONS:
         return direct
 
     for item in info.get("files") or []:
         item_name = Path(str(item.get("path") or item.get("name") or "")).name
         if not item_name:
+            continue
+        if Path(item_name).suffix.lower() not in VIDEO_EXTENSIONS:
             continue
         direct_item = root / item_name
         if direct_item.is_file():

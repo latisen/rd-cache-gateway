@@ -525,6 +525,29 @@ def test_find_matching_media_file_returns_none_for_wrong_episode_same_show(tmp_p
 
 
 
+def test_find_matching_media_file_ignores_tgx_text_sidecars(tmp_path):
+    debrid_root = tmp_path / "debrid"
+    debrid_root.mkdir(parents=True, exist_ok=True)
+
+    text_sidecar = debrid_root / "[TGx]Downloaded from torrentgalaxy.to .txt"
+    text_sidecar.write_text("ignore", encoding="utf-8")
+
+    video = debrid_root / "Below.Deck.Down.Under.S03E13.Lipstick.Service.1080p.WEB-DL.mkv"
+    video.write_bytes(b"x" * 2048)
+
+    info = {
+        "filename": "Below Deck Down Under S03E13 Lipstick Service 1080p AMZN WEB-DL DDP2 0 H 264-NTb",
+        "files": [
+            {"path": f"/{text_sidecar.name}", "bytes": 718, "selected": 1},
+            {"path": f"/{video.name}", "bytes": 2048, "selected": 1},
+        ],
+    }
+
+    match = find_matching_media_file(info, debrid_root)
+    assert match == video
+
+
+
 def test_poller_marks_downloaded_job_ready_for_arr_using_media_file_size(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 
