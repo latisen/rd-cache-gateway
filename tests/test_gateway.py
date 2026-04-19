@@ -430,6 +430,47 @@ def test_poller_marks_downloaded_job_ready_for_arr_using_media_file_size(tmp_pat
     assert payload[0]["content_path"].endswith(media_file.name)
 
 
+
+def test_poller_records_rd_failure_reason_and_stops_repolling(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    main.store.replace_all(
+        {
+            "rdfail": {
+                "torrent_id": "rdfail",
+                "rd_torrent_id": "rdfail",
+                "filename": "Broken.Release.S01E01.mkv",
+                "status": "downloading",
+                "category": "sonarr",
+                "raw": {},
+            }
+        }
+    )
+
+    monkeypatch.setattr(main.rd_client, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        main.rd_client,
+        "torrent_info",
+        lambda torrent_id: {
+            "id": torrent_id,
+            "status": "magnet_error",
+            "error": "not_cached_or_dead",
+            "progress": 0,
+            "seeders": 0,
+        },
+    )
+
+    main.poller.poll_once()
+
+    job = main.store.get("rdfail")
+    assert job is not None
+    assert job["status"] == "failed"
+    assert job["polling_disabled"] is True
+    assert "magnet_error" in (job.get("last_error") or "")
+    assert "not_cached_or_dead" in (job.get("last_error") or "")
+
+
+
 def test_visible_arr_symlink_is_created_for_sonarr_import(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 

@@ -18,6 +18,14 @@ from app.staging import (
 logger = logging.getLogger(__name__)
 
 
+def _rd_failure_reason(info: dict) -> str:
+    rd_status = str(info.get("status") or "failed").strip() or "failed"
+    detail = info.get("error") or info.get("message") or info.get("error_message") or info.get("status_message")
+    if detail:
+        return f"RD failure: {rd_status} - {detail}"
+    return f"RD failure: {rd_status}"
+
+
 class JobPoller:
     def __init__(self, store: JobStore, rd_client: RealDebridClient, settings: Settings):
         self.store = store
@@ -109,10 +117,24 @@ class JobPoller:
                 }
 
                 mapped = map_rd_status(info.get("status"))
+                if mapped == "failed":
+                    reason = _rd_failure_reason(info)
+                    patch["status"] = mapped
+                    patch["last_error"] = reason
+                    patch["polling_disabled"] = True
+                    self.store.merge(job_id, patch)
+                    logger.warning(
+                        "POLL failed torrent_id=%s rd_status=%s reason=%s",
+                        job_id,
+                        info.get("status"),
+                        reason,
+                    )
+                    continue
+
                 if mapped != "ready":
                     patch["status"] = mapped
                     self.store.merge(job_id, patch)
-                    logger.info("POLL updated torrent_id=%s status=%s", job_id, mapped)
+                    logger.info("POLL updated torrent_id=%s status=%s rd_status=%s", job_id, mapped, info.get("status"))
                     continue
 
                 source_file = find_matching_media_file(info, self.settings.debrid_all_dir)

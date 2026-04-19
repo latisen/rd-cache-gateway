@@ -85,10 +85,21 @@ class RealDebridClient:
             headers=self._headers(),
             timeout=self.timeout,
         )
-        logger.info("RD poll torrent_id=%s -> %s", torrent_id, response.status_code)
         if response.status_code != 200:
+            logger.info("RD poll torrent_id=%s -> %s", torrent_id, response.status_code)
             raise RuntimeError(f"RD info failed for {torrent_id}: {response.status_code} {response.text}")
-        return response.json()
+        payload = response.json()
+        logger.info(
+            "RD poll torrent_id=%s -> %s rd_status=%s progress=%s seeders=%s speed=%s error=%s",
+            torrent_id,
+            response.status_code,
+            payload.get("status"),
+            payload.get("progress"),
+            payload.get("seeders"),
+            payload.get("speed"),
+            payload.get("error") or payload.get("message") or "",
+        )
+        return payload
 
     def delete_torrent(self, torrent_id: str) -> None:
         logger.info("RD delete torrent_id=%s", torrent_id)
