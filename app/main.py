@@ -623,7 +623,7 @@ def qbit_torrents_properties(hash: str):
     resolved_id, job = _resolve_job(hash)
     raw = job.get("raw") or {}
     total_size = safe_int(raw.get("bytes"), 0)
-    progress = 1.0 if job.get("status") in {"ready", "staged", "ready_for_arr", "scan_pending", "imported"} else 0.0
+    progress = 1.0 if job.get("status") in {"ready_for_arr", "scan_pending", "imported"} else 0.0
     arr_file_path = job.get("arr_file_path")
     save_path = str(Path(arr_file_path).parent) if arr_file_path else str(job.get("arr_path") or f"{settings.qbit_save_path}/{resolved_id}")
     return {

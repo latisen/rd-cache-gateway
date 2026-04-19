@@ -41,8 +41,8 @@ RD_TO_JOB_STATUS: dict[str, JobStatus] = {
 JOB_TO_QBIT_STATE: dict[str, str] = {
     "queued": "queuedDL",
     "downloading": "downloading",
-    "ready": "pausedUP",
-    "staged": "pausedUP",
+    "ready": "downloading",
+    "staged": "downloading",
     "ready_for_arr": "pausedUP",
     "scan_pending": "pausedUP",
     "imported": "pausedUP",
