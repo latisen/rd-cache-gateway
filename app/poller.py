@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from pathlib import Path
 
 from app.arr_clients import get_arr_client
 from app.config import Settings
@@ -11,10 +10,8 @@ from app.models import map_rd_status, now_utc_iso
 from app.rd_client import RealDebridClient
 from app.staging import (
     check_staging_ready,
-    create_staging_download,
     create_staging_symlink,
     extract_expected_media_size,
-    find_matching_media_entry,
     find_matching_media_file,
 )
 
@@ -169,33 +166,6 @@ class JobPoller:
                     continue
 
                 source_file = find_matching_media_file(info, self.settings.debrid_all_dir)
-                staging_path = None
-                visible_dir = None
-                visible_file = None
-
-                if not source_file and self.settings.debrid_provider == "torbox":
-                    remote_item = find_matching_media_entry(info)
-                    if remote_item is not None:
-                        remote_name = str(remote_item.get("path") or remote_item.get("name") or info.get("filename") or "")
-                        try:
-                            expected_remote_size = int(remote_item.get("bytes") or 0) or None
-                        except Exception:
-                            expected_remote_size = None
-                        try:
-                            download_url = self.rd_client.get_download_url(str(rd_id), str(remote_item.get("id") or "0"))
-                            source_file, staging_path, visible_dir, visible_file = create_staging_download(
-                                job_id,
-                                remote_name,
-                                download_url,
-                                self.rd_client.download_file,
-                                self.settings.staging_root,
-                                self.settings.visible_staging_root,
-                                expected_remote_size,
-                            )
-                            logger.info("STAGE downloaded remote source torrent_id=%s file=%s", job_id, Path(remote_name).name)
-                        except Exception as exc:
-                            logger.warning("STAGE remote download failed torrent_id=%s error=%s", job_id, exc)
-
                 if not source_file:
                     patch["status"] = "ready"
                     patch["arr_ready_reason"] = "source_not_found"
@@ -212,13 +182,12 @@ class JobPoller:
                     )
                     continue
 
-                if staging_path is None or visible_dir is None or visible_file is None:
-                    staging_path, visible_dir, visible_file = create_staging_symlink(
-                        job_id,
-                        source_file,
-                        self.settings.staging_root,
-                        self.settings.visible_staging_root,
-                    )
+                staging_path, visible_dir, visible_file = create_staging_symlink(
+                    job_id,
+                    source_file,
+                    self.settings.staging_root,
+                    self.settings.visible_staging_root,
+                )
                 expected_media_size = extract_expected_media_size(info, source_file)
                 host_ready, host_reason, host_details = check_staging_ready(
                     staging_path,

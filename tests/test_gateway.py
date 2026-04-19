@@ -648,10 +648,9 @@ def test_visible_arr_symlink_is_created_for_sonarr_import(tmp_path, monkeypatch)
 
 
 
-def test_poller_downloads_torbox_file_when_mount_is_empty(tmp_path, monkeypatch):
+def test_poller_requires_webdav_mount_and_does_not_download_files(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 
-    expected_size = 2 * 1024 * 1024
     filename = "Below Deck Down Under S03E09 Foam Sick 1080p AMZN WEB-DL DDP2 0 H 264-NTb[EZTVx.to].mkv"
 
     main.store.replace_all(
@@ -675,36 +674,41 @@ def test_poller_downloads_torbox_file_when_mount_is_empty(tmp_path, monkeypatch)
             "id": torrent_id,
             "status": "downloaded",
             "filename": "Below Deck Down Under S03E09 Foam Sick 1080p AMZN WEB-DL DDP2 0 H 264-NTb",
-            "bytes": expected_size,
+            "bytes": 2 * 1024 * 1024,
             "files": [
                 {
                     "id": 0,
                     "path": f"/completed/hash/release/{filename}",
-                    "bytes": expected_size,
+                    "bytes": 2 * 1024 * 1024,
                     "selected": 1,
                 }
             ],
         },
     )
-    monkeypatch.setattr(main.rd_client, "get_download_url", lambda torrent_id, file_id: f"https://example/{file_id}")
 
-    def fake_download_file(url, destination, expected_size=None):
-        target = Path(destination)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(b"x" * int(expected_size or 0))
-        return target
+    calls = {"download_file": 0, "get_download_url": 0}
 
-    monkeypatch.setattr(main.rd_client, "download_file", fake_download_file, raising=False)
+    def fail_download_file(*args, **kwargs):
+        calls["download_file"] += 1
+        raise AssertionError("download_file must not be called in symlink-only mode")
+
+    def fail_get_download_url(*args, **kwargs):
+        calls["get_download_url"] += 1
+        raise AssertionError("get_download_url must not be called in symlink-only mode")
+
+    monkeypatch.setattr(main.rd_client, "download_file", fail_download_file, raising=False)
+    monkeypatch.setattr(main.rd_client, "get_download_url", fail_get_download_url)
 
     main.poller.poll_once()
 
+    assert calls == {"download_file": 0, "get_download_url": 0}
+
     job = main.store.get("rdremote")
     assert job is not None
-    assert job["status"] == "ready_for_arr"
-    assert Path(job["staging_path"]).is_symlink()
-    assert Path(job["arr_file_path"]).is_symlink()
-    assert Path(job["arr_file_path"]).resolve().stat().st_size == expected_size
-    assert str(tmp_path / "sonarr" / ".source") in str(Path(job["arr_file_path"]).resolve())
+    assert job["status"] == "ready"
+    assert job["arr_ready_reason"] == "source_not_found"
+    assert job.get("staging_path") is None
+    assert job.get("arr_file_path") is None
 
 
 
