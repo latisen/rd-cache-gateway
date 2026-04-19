@@ -25,7 +25,7 @@ spec:
           command:
             - sh
             - -c
-            - mkdir -p /config /data/downloads/rd-cache-gateway /data/torbox/webdav /srv/media/data/downloads/rd-cache-gateway /mnt/torbox/webdav && chown -R 1000:1000 /config /data /srv/media/data /mnt/torbox
+            - mkdir -p /config /data/downloads/rd-cache-gateway /data/downloads/torbox && chown -R 1000:1000 /config /data
           securityContext:
             runAsUser: 0
           volumeMounts:
@@ -33,11 +33,6 @@ spec:
               mountPath: /config
             - name: media-data
               mountPath: /data
-            - name: media-data
-              mountPath: /srv/media/data
-            - name: torbox-webdav
-              mountPath: /mnt/torbox/webdav
-              mountPropagation: HostToContainer
       tolerations:
         - key: "node.kubernetes.io/not-ready"
           operator: "Exists"
@@ -82,15 +77,15 @@ spec:
             - name: APP_GID
               value: "1000"
             - name: STAGING_ROOT
-              value: "/srv/media/data/downloads/rd-cache-gateway"
+              value: "/data/downloads/rd-cache-gateway"
             - name: SONARR_STAGING_ROOT
               value: "/data/downloads/rd-cache-gateway"
             - name: DEBRID_PROVIDER
               value: "torbox"
             - name: DEBRID_ALL_DIR
-              value: "/mnt/torbox/webdav/__all__"
+              value: "/data/downloads/torbox/__all__"
             - name: DEBRID_VISIBLE_ALL_DIR
-              value: "/data/torbox/webdav/__all__"
+              value: "/data/downloads/torbox/__all__"
             - name: WEBDAV_URL
               value: "http://127.0.0.1:8000/dav"
             - name: WEBDAV_MOUNT_CHECK_ENABLED
@@ -130,10 +125,6 @@ spec:
               mountPath: /config
             - name: media-data
               mountPath: /data
-            - name: media-data
-              mountPath: /srv/media/data
-            - name: torbox-webdav
-              mountPath: /mnt/torbox/webdav
               mountPropagation: HostToContainer
           readinessProbe:
             httpGet:
@@ -161,7 +152,7 @@ spec:
               echo "Starting TorBox WebDAV mounter"
               while true; do
                 env \
-                  MOUNT_POINT=/mnt/torbox/webdav \
+                  MOUNT_POINT=/data/downloads/torbox \
                   WEBDAV_URL=http://127.0.0.1:8000/dav \
                   UID_VALUE=1000 \
                   GID_VALUE=1000 \
@@ -181,8 +172,8 @@ spec:
                 - SYS_ADMIN
                 - MKNOD
           volumeMounts:
-            - name: torbox-webdav
-              mountPath: /mnt/torbox/webdav
+            - name: media-data
+              mountPath: /data
               mountPropagation: Bidirectional
             - name: dev-fuse
               mountPath: /dev/fuse
@@ -194,10 +185,6 @@ spec:
         - name: media-data
           hostPath:
             path: /srv/media/data
-            type: DirectoryOrCreate
-        - name: torbox-webdav
-          hostPath:
-            path: /srv/media/data/torbox/webdav
             type: DirectoryOrCreate
         - name: dev-fuse
           hostPath:

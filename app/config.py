@@ -56,8 +56,8 @@ def get_settings() -> Settings:
     torbox_token = os.getenv("TORBOX_API_KEY")
     debrid_provider = "torbox"
     debrid_token = torbox_token
-    default_debrid_dir = "/mnt/torbox/webdav/__all__"
-    default_visible_debrid_dir = "/data/torbox/webdav/__all__"
+    default_debrid_dir = "/data/downloads/torbox/__all__"
+    default_visible_debrid_dir = "/data/downloads/torbox/__all__"
 
     return Settings(
         app_name="rd-cache-gateway",
