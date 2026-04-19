@@ -29,6 +29,30 @@ def _rd_failure_reason(info: dict) -> str:
     return f"RD failure: {rd_status}"
 
 
+def _maybe_finalize_scan(arr_client, command: dict | None) -> dict | None:
+    if not isinstance(command, dict):
+        return None
+    command_id = command.get("id")
+    if not command_id or not arr_client.is_configured():
+        return None
+
+    latest = arr_client.get_command(int(command_id))
+    status = latest.get("status")
+    result = latest.get("result")
+    if status == "completed" and result == "successful":
+        return {
+            "status": "imported",
+            "imported_at": now_utc_iso(),
+            "last_error": None,
+            "arr_scan_command": latest,
+        }
+    return {
+        "arr_scan_command": latest,
+        "status": "scan_pending",
+        "last_error": None,
+    }
+
+
 class JobPoller:
     def __init__(self, store: JobStore, rd_client: RealDebridClient, settings: Settings):
         self.store = store
@@ -100,12 +124,16 @@ class JobPoller:
                     arr_path = job.get("arr_path")
                     if arr_client.is_configured() and arr_path and not job.get("arr_scan_command"):
                         download_client_id = str(job.get("client_hash") or job_id).upper()
+                        command = arr_client.trigger_scan(self.settings.visible_staging_root.__class__(arr_path), download_client_id)
                         patch = {
                             "arr_refresh_command": arr_client.refresh_monitored_downloads(),
-                            "arr_scan_command": arr_client.trigger_scan(self.settings.visible_staging_root.__class__(arr_path), download_client_id),
+                            "arr_scan_command": command,
                             "status": "scan_pending",
                             "last_error": None,
                         }
+                        completed_patch = _maybe_finalize_scan(arr_client, command)
+                        if completed_patch:
+                            patch.update(completed_patch)
                         self.store.merge(job_id, patch)
                         logger.info("POLL queued import scan torrent_id=%s", job_id)
                     continue
@@ -228,8 +256,12 @@ class JobPoller:
                     if arr_client.is_configured() and not job.get("arr_scan_command"):
                         download_client_id = str(job.get("client_hash") or job_id).upper()
                         patch["arr_refresh_command"] = arr_client.refresh_monitored_downloads()
-                        patch["arr_scan_command"] = arr_client.trigger_scan(visible_dir, download_client_id)
+                        command = arr_client.trigger_scan(visible_dir, download_client_id)
+                        patch["arr_scan_command"] = command
                         patch["status"] = "scan_pending"
+                        completed_patch = _maybe_finalize_scan(arr_client, command)
+                        if completed_patch:
+                            patch.update(completed_patch)
 
                 self.store.merge(job_id, patch)
                 logger.info("POLL updated torrent_id=%s status=%s", job_id, patch['status'])

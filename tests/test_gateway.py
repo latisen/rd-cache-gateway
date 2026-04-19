@@ -769,6 +769,70 @@ def test_qbit_info_uses_arr_file_name_for_output_path(tmp_path, monkeypatch):
 
 
 
+def test_poller_marks_imported_immediately_when_arr_scan_finishes(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    debrid_root = tmp_path / "debrid"
+    debrid_root.mkdir(parents=True, exist_ok=True)
+    media_file = debrid_root / "Show.Name.S01E01.1080p.mkv"
+    media_file.write_bytes(b"x" * (2 * 1024 * 1024))
+
+    class FakeArrClient:
+        def is_configured(self):
+            return True
+
+        def refresh_monitored_downloads(self):
+            return {"id": 1, "name": "RefreshMonitoredDownloads"}
+
+        def trigger_scan(self, folder, download_id):
+            return {"id": 2, "name": "DownloadedEpisodesScan"}
+
+        def get_command(self, command_id):
+            return {"id": command_id, "status": "completed", "result": "successful"}
+
+    main.store.replace_all(
+        {
+            REAL_HASH: {
+                "torrent_id": REAL_HASH,
+                "client_hash": REAL_HASH,
+                "rd_torrent_id": "rd888",
+                "filename": media_file.name,
+                "status": "downloading",
+                "category": "sonarr",
+                "raw": {},
+            }
+        }
+    )
+
+    monkeypatch.setattr(main.rd_client, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        main.rd_client,
+        "torrent_info",
+        lambda torrent_id: {
+            "id": torrent_id,
+            "status": "downloaded",
+            "filename": media_file.name,
+            "bytes": 2 * 1024 * 1024,
+            "files": [
+                {
+                    "path": f"/{media_file.name}",
+                    "bytes": 2 * 1024 * 1024,
+                    "selected": 1,
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr("app.poller.get_arr_client", lambda category, settings: FakeArrClient())
+
+    main.poller.poll_once()
+
+    job = main.store.get(REAL_HASH)
+    assert job is not None
+    assert job["status"] == "imported"
+    assert job.get("imported_at")
+
+
+
 def test_poller_uses_client_hash_as_download_client_id(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 
