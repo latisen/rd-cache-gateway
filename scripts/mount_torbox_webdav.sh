@@ -19,17 +19,23 @@ if mountpoint -q "$MOUNT_POINT"; then
 fi
 
 REMOTE=":webdav,url=${WEBDAV_URL},vendor=other:"
+DAEMON_MODE="${DAEMON_MODE:-1}"
 
 echo "Mounting $WEBDAV_URL at $MOUNT_POINT"
-rclone mount "$REMOTE" "$MOUNT_POINT" \
-  --daemon \
-  --read-only \
-  --allow-other \
-  --dir-cache-time 10s \
-  --poll-interval 15s \
-  --vfs-cache-mode full \
-  --uid "$UID_VALUE" \
-  --gid "$GID_VALUE" \
+RCLONE_ARGS=(
+  --read-only
+  --allow-other
+  --dir-cache-time 10s
+  --poll-interval 15s
+  --vfs-cache-mode full
+  --uid "$UID_VALUE"
+  --gid "$GID_VALUE"
   --umask 002
+)
 
-echo "Mounted TorBox WebDAV at $MOUNT_POINT"
+if [ "$DAEMON_MODE" = "1" ]; then
+  rclone mount "$REMOTE" "$MOUNT_POINT" --daemon "${RCLONE_ARGS[@]}"
+  echo "Mounted TorBox WebDAV at $MOUNT_POINT"
+else
+  exec rclone mount "$REMOTE" "$MOUNT_POINT" "${RCLONE_ARGS[@]}"
+fi

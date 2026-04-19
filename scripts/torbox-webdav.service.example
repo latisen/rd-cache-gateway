@@ -4,12 +4,14 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
 Environment=WEBDAV_URL=http://192.168.30.58:8000/dav
 Environment=MOUNT_POINT=/srv/media/mnt/torbox/webdav
+Environment=DAEMON_MODE=0
 ExecStart=/bin/bash /opt/rd-cache-gateway/scripts/mount_torbox_webdav.sh
 ExecStop=/bin/fusermount -u /srv/media/mnt/torbox/webdav
+Restart=always
+RestartSec=5
 TimeoutStartSec=60
 
 [Install]

@@ -4,7 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     APP_HOME=/app \
-    DATA_DIR=/data \
+    DATA_DIR=/config \
     STAGING_ROOT=/srv/media/data/downloads/rd-cache-gateway \
     SONARR_STAGING_ROOT=/data/downloads/rd-cache-gateway \
     POLL_INTERVAL=5 \
@@ -30,8 +30,8 @@ COPY app ./app
 
 RUN groupadd --gid 1000 appuser \
     && useradd --create-home --uid 1000 --gid 1000 appuser \
-    && mkdir -p /data /srv/media/data/downloads/rd-cache-gateway \
-    && chown -R appuser:appuser /app /data /srv/media/data
+    && mkdir -p /config /data/downloads/rd-cache-gateway /srv/media/data/downloads/rd-cache-gateway \
+    && chown -R appuser:appuser /app /config /data /srv/media/data
 
 USER appuser
 
