@@ -5,6 +5,7 @@ import os
 import re
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from urllib.parse import unquote, urljoin, urlparse
 
 import requests
@@ -623,9 +624,11 @@ def qbit_torrents_properties(hash: str):
     raw = job.get("raw") or {}
     total_size = safe_int(raw.get("bytes"), 0)
     progress = 1.0 if job.get("status") in {"ready", "staged", "ready_for_arr", "scan_pending", "imported"} else 0.0
+    arr_file_path = job.get("arr_file_path")
+    save_path = str(Path(arr_file_path).parent) if arr_file_path else str(job.get("arr_path") or f"{settings.qbit_save_path}/{resolved_id}")
     return {
         "hash": str(job.get("client_hash") or resolved_id).lower(),
-        "save_path": str(job.get("arr_path") or f"{settings.qbit_save_path}/{resolved_id}"),
+        "save_path": save_path,
         "creation_date": 0,
         "piece_size": 0,
         "comment": "",

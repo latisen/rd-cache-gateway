@@ -684,6 +684,37 @@ def test_poller_disables_deleted_remote_torrents(tmp_path, monkeypatch):
 
 
 
+def test_qbit_info_uses_arr_file_name_for_output_path(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    arr_dir = tmp_path / "sonarr" / "Release-abc123"
+    arr_dir.mkdir(parents=True, exist_ok=True)
+    arr_file = arr_dir / "Below.Deck.Down.Under.S03E09.Foam.Sick.1080p.WEB-DL.mkv"
+    arr_file.write_bytes(b"x" * 100)
+
+    main.store.replace_all(
+        {
+            REAL_HASH: {
+                "torrent_id": REAL_HASH,
+                "client_hash": REAL_HASH,
+                "rd_torrent_id": "rd777",
+                "filename": "Below Deck Down Under S03E09 Foam Sick 1080p AMZN WEB-DL DDP2 0 H 264-NTb",
+                "status": "staged",
+                "category": "sonarr",
+                "arr_path": str(arr_dir),
+                "arr_file_path": str(arr_file),
+                "raw": {"bytes": 100},
+            }
+        }
+    )
+
+    payload = TestClient(main.app).get("/api/v2/torrents/info").json()
+    assert payload[0]["save_path"] == str(arr_dir)
+    assert payload[0]["content_path"] == str(arr_file)
+    assert payload[0]["name"] == arr_file.name
+
+
+
 def test_poller_uses_client_hash_as_download_client_id(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 

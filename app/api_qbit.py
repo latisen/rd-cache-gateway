@@ -4,6 +4,7 @@ import base64
 import hashlib
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import unquote
 
 from app.models import map_job_to_qbit_state, safe_int, safe_progress
@@ -134,8 +135,17 @@ def build_qbit_torrent_list(
         job_status = str(job.get("status") or "queued")
         state = map_job_to_qbit_state(job_status)
         display_hash = str(job.get("client_hash") or torrent_id).lower()
-        save_dir = str(job.get("arr_path") or f"{save_path}/{display_hash}")
-        content_path = str(job.get("arr_file_path") or (f"{save_dir}/{job.get('filename')}" if job.get("filename") else save_dir))
+
+        arr_file_path = job.get("arr_file_path")
+        if arr_file_path:
+            content_path = str(arr_file_path)
+            save_dir = str(Path(arr_file_path).parent)
+            display_name = Path(arr_file_path).name
+        else:
+            save_dir = str(job.get("arr_path") or f"{save_path}/{display_hash}")
+            content_path = str(f"{save_dir}/{job.get('filename')}" if job.get("filename") else save_dir)
+            display_name = str(job.get("filename") or torrent_id)
+
         progress = 0.0
         eta = 8640000
         completion_on = 0
@@ -162,7 +172,7 @@ def build_qbit_torrent_list(
         items.append(
             {
                 "hash": display_hash,
-                "name": job.get("filename") or torrent_id,
+                "name": display_name,
                 "state": state,
                 "progress": progress,
                 "size": total_size,
