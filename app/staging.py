@@ -206,8 +206,7 @@ def _refresh_symlink(link_path: Path, source_file: Path) -> Path:
     link_path.parent.mkdir(parents=True, exist_ok=True)
     if link_path.exists() or link_path.is_symlink():
         link_path.unlink()
-    link_target = os.path.relpath(str(source_file), start=str(link_path.parent))
-    link_path.symlink_to(link_target, target_is_directory=False)
+    link_path.symlink_to(source_file, target_is_directory=False)
     return link_path
 
 
@@ -292,7 +291,11 @@ def check_staging_ready(
             return False, "target_missing", {}
         actual_size = target.stat().st_size
         if actual_size < min_bytes:
-            return False, "target_too_small", {"actual_size": actual_size, "min_size": min_bytes}
+            details = {"target": str(target), "actual_size": actual_size, "min_size": min_bytes}
+            if staging_path.is_symlink() and expected_size and expected_size >= min_bytes and actual_size > 0:
+                details["expected_size"] = expected_size
+                return True, "ready_virtual_size_unverified", details
+            return False, "target_too_small", details
         if expected_size and actual_size != expected_size:
             details = {"target": str(target), "actual_size": actual_size, "expected_size": expected_size}
             if staging_path.is_symlink():
