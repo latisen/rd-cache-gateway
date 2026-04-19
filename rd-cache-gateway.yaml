@@ -159,13 +159,18 @@ spec:
             - -lc
             - |
               echo "Starting TorBox WebDAV mounter"
-              exec env \
-                MOUNT_POINT=/mnt/torbox/webdav \
-                WEBDAV_URL=http://127.0.0.1:8000/dav \
-                UID_VALUE=1000 \
-                GID_VALUE=1000 \
-                DAEMON_MODE=0 \
-                /app/scripts/mount_torbox_webdav.sh
+              while true; do
+                env \
+                  MOUNT_POINT=/mnt/torbox/webdav \
+                  WEBDAV_URL=http://127.0.0.1:8000/dav \
+                  UID_VALUE=1000 \
+                  GID_VALUE=1000 \
+                  DAEMON_MODE=0 \
+                  /app/scripts/mount_torbox_webdav.sh
+                status=$?
+                echo "TorBox WebDAV mount exited with status ${status}; retrying in 5s"
+                sleep 5
+              done
           securityContext:
             privileged: true
             allowPrivilegeEscalation: true
