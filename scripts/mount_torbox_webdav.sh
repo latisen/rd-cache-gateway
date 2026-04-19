@@ -42,6 +42,9 @@ if has_real_fuse_mount; then
   fusermount -uz "$MOUNT_POINT" >/dev/null 2>&1 || true
 else
   echo "No active TorBox WebDAV FUSE mount detected at $MOUNT_POINT; mounting now"
+  if [ -d "$TARGET_DIR" ] && ! has_visible_entries; then
+    rmdir "$TARGET_DIR" >/dev/null 2>&1 || true
+  fi
 fi
 
 REMOTE=":webdav,url='${WEBDAV_URL}',vendor=other:"
@@ -63,6 +66,7 @@ if [ "$DAEMON_MODE" = "1" ]; then
     --daemon \
     --read-only \
     --allow-other \
+    --allow-non-empty \
     --dir-cache-time 10s \
     --poll-interval 15s \
     --vfs-cache-mode off \
@@ -85,6 +89,7 @@ else
   exec rclone mount "$REMOTE" "$MOUNT_POINT" \
     --read-only \
     --allow-other \
+    --allow-non-empty \
     --dir-cache-time 10s \
     --poll-interval 15s \
     --vfs-cache-mode off \
