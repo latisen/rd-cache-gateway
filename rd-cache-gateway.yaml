@@ -25,7 +25,7 @@ spec:
           command:
             - sh
             - -c
-            - mkdir -p /data /srv/media/data/downloads/rd-cache-gateway /mnt/debrid/decypharr/realdebrid/__all__ && chown -R 1000:1000 /data /srv/media/data
+            - mkdir -p /data /srv/media/data/downloads/rd-cache-gateway /mnt/torbox/webdav/__all__ && chown -R 1000:1000 /data /srv/media/data /mnt/torbox
           securityContext:
             runAsUser: 0
           volumeMounts:
@@ -80,8 +80,10 @@ spec:
               value: "/srv/media/data/downloads/rd-cache-gateway"
             - name: SONARR_STAGING_ROOT
               value: "/data/downloads/rd-cache-gateway"
+            - name: DEBRID_PROVIDER
+              value: "torbox"
             - name: DEBRID_ALL_DIR
-              value: "/mnt/debrid/decypharr/realdebrid/__all__"
+              value: "/mnt/torbox/webdav/__all__"
             - name: ENABLE_DEBUG_UI
               value: "1"
             - name: DEBUG_WEB_PORT
@@ -98,11 +100,11 @@ spec:
                   key: SONARR_API_KEY
             - name: POLL_INTERVAL
               value: "5"
-            - name: RD_TOKEN
+            - name: TORBOX_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: rd-cache-gateway-secrets
-                  key: RD_TOKEN
+                  key: TORBOX_API_KEY
           ports:
             - containerPort: 8000
               name: http

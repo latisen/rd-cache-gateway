@@ -10,7 +10,7 @@ from urllib.parse import unquote, urljoin, urlparse
 import requests
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from app.api_qbit import (
     build_categories,
@@ -39,6 +39,7 @@ from app.models import (
 from app.poller import JobPoller
 from app.rd_client import RealDebridClient
 from app.staging import cleanup_staging_for_job
+from app.webdav import build_multistatus, find_entry, normalize_subpath
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -51,7 +52,7 @@ get_settings.cache_clear()
 settings = get_settings()
 store = JobStore(settings.jobs_file)
 set_jobs_provider(store.all)
-rd_client = RealDebridClient(settings.rd_token)
+rd_client = RealDebridClient(settings.rd_token, provider=settings.debrid_provider)
 poller = JobPoller(store=store, rd_client=rd_client, settings=settings)
 live_log_server = LiveLogServer(port=settings.debug_web_port)
 
@@ -339,11 +340,58 @@ def debug_status() -> dict:
         "jobs_file": str(store.jobs_file),
         "staging_root": str(settings.staging_root),
         "visible_staging_root": str(settings.visible_staging_root),
+        "debrid_provider": settings.debrid_provider,
         "debrid_all_dir": str(settings.debrid_all_dir),
+        "webdav_path": "/dav/__all__/",
         "poller_enabled": settings.enable_poller,
         "debug_ui_enabled": settings.enable_debug_ui,
         "debug_web_port": settings.debug_web_port,
     }
+
+
+@app.api_route("/dav", methods=["OPTIONS", "PROPFIND"])
+@app.api_route("/dav/{subpath:path}", methods=["OPTIONS", "PROPFIND", "GET", "HEAD"])
+def torbox_webdav(request: Request, subpath: str = ""):
+    headers = {
+        "DAV": "1",
+        "Allow": "OPTIONS, PROPFIND, GET, HEAD",
+        "Cache-Control": "no-store",
+    }
+
+    if request.method == "OPTIONS":
+        return Response(status_code=200, headers=headers)
+
+    if settings.debrid_provider != "torbox":
+        return PlainTextResponse("WebDAV is only enabled for TorBox.", status_code=404, headers=headers)
+
+    try:
+        entries = rd_client.list_webdav_entries()
+    except Exception as exc:
+        logger.exception("WEBDAV listing failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    normalized = normalize_subpath(subpath)
+
+    if request.method == "PROPFIND":
+        entry = find_entry(normalized, entries)
+        if normalized not in {"", "__all__"} and entry is None:
+            raise HTTPException(status_code=404, detail="WebDAV path not found")
+        xml = build_multistatus(normalized, entries, request.headers.get("Depth", "1"))
+        return Response(content=xml, media_type="application/xml", status_code=207, headers=headers)
+
+    entry = find_entry(normalized, entries)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="WebDAV file not found")
+    if entry.get("is_dir"):
+        return PlainTextResponse("Directory", status_code=200, headers=headers)
+
+    try:
+        download_url = rd_client.get_download_url(str(entry.get("torrent_id") or ""), str(entry.get("file_id") or "0"))
+    except Exception as exc:
+        logger.exception("WEBDAV download lookup failed path=%s", normalized)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return RedirectResponse(url=download_url, status_code=307, headers=headers)
 
 
 @app.get("/healthz", response_model=HealthResponse)
@@ -358,7 +406,7 @@ def healthz() -> HealthResponse:
 @app.get("/rd/test", response_model=RDUserResponse)
 def rd_test() -> RDUserResponse:
     if not rd_client.is_configured():
-        raise HTTPException(status_code=503, detail="RD_TOKEN is not set")
+        raise HTTPException(status_code=503, detail="Debrid API token is not set")
     data = rd_client.user()
     return RDUserResponse(
         status="ok",

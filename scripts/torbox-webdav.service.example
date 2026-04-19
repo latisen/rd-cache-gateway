@@ -1,0 +1,16 @@
+[Unit]
+Description=Mount TorBox WebDAV catalog
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=WEBDAV_URL=http://192.168.30.58:8000/dav
+Environment=MOUNT_POINT=/srv/media/mnt/torbox/webdav
+ExecStart=/bin/bash /opt/rd-cache-gateway/scripts/mount_torbox_webdav.sh
+ExecStop=/bin/fusermount -u /srv/media/mnt/torbox/webdav
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

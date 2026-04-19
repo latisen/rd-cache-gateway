@@ -21,12 +21,21 @@ RD_TO_JOB_STATUS: dict[str, JobStatus] = {
     "queued": "queued",
     "magnet_conversion": "queued",
     "waiting_files_selection": "queued",
+    "pending": "queued",
+    "processing": "queued",
+    "initializing": "queued",
     "downloading": "downloading",
+    "cached": "ready",
+    "completed": "ready",
+    "complete": "ready",
+    "finished": "ready",
     "downloaded": "ready",
     "error": "failed",
+    "failed": "failed",
     "dead": "failed",
     "virus": "failed",
     "magnet_error": "failed",
+    "inactive": "failed",
 }
 
 JOB_TO_QBIT_STATE: dict[str, str] = {

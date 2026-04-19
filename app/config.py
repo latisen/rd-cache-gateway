@@ -18,6 +18,7 @@ class Settings:
     import_stability_min_bytes: int
     qbit_username: str
     qbit_password: str
+    debrid_provider: str
     rd_token: str | None
     sonarr_url: str | None
     sonarr_api_key: str | None
@@ -45,14 +46,18 @@ def _env_bool(name: str, default: bool) -> bool:
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    rd_token = os.getenv("RD_TOKEN")
+    # Temporary safety lock: always run this gateway against TorBox only,
+    # even if legacy Real-Debrid environment variables are still present.
+    torbox_token = os.getenv("TORBOX_API_KEY")
+    debrid_provider = "torbox"
+    debrid_token = torbox_token
+    default_debrid_dir = "/mnt/torbox/webdav/__all__"
+
     return Settings(
         app_name="rd-cache-gateway",
         app_version=os.getenv("APP_VERSION", "0.9.0"),
         data_dir=Path(os.getenv("DATA_DIR", "./data")).expanduser(),
-        debrid_all_dir=Path(
-            os.getenv("DEBRID_ALL_DIR", "/mnt/debrid/decypharr/realdebrid/__all__")
-        ).expanduser(),
+        debrid_all_dir=Path(os.getenv("DEBRID_ALL_DIR", default_debrid_dir)).expanduser(),
         staging_root=Path(
             os.getenv("STAGING_ROOT", "/srv/media/data/downloads/rd-cache-gateway")
         ).expanduser(),
@@ -66,12 +71,13 @@ def get_settings() -> Settings:
         ),
         qbit_username=os.getenv("QBIT_USERNAME", "admin"),
         qbit_password=os.getenv("QBIT_PASSWORD", "adminadmin"),
-        rd_token=rd_token,
+        debrid_provider=debrid_provider,
+        rd_token=debrid_token,
         sonarr_url=os.getenv("SONARR_URL"),
         sonarr_api_key=os.getenv("SONARR_API_KEY"),
         radarr_url=os.getenv("RADARR_URL"),
         radarr_api_key=os.getenv("RADARR_API_KEY"),
-        enable_poller=_env_bool("ENABLE_POLLER", bool(rd_token)),
+        enable_poller=_env_bool("ENABLE_POLLER", bool(debrid_token)),
         enable_debug_ui=_env_bool("ENABLE_DEBUG_UI", True),
         debug_web_port=max(1, int(os.getenv("DEBUG_WEB_PORT", "8888"))),
     )

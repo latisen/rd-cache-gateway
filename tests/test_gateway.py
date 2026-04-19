@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.live_log import get_log_view_html, set_jobs_provider
+from app.rd_client import RealDebridClient
 from app.staging import find_matching_media_file
 
 
@@ -323,6 +324,31 @@ def test_readding_same_hash_clears_stale_poller_state(tmp_path, monkeypatch):
     assert job.get("imported_at") is None
 
 
+def test_provider_is_hard_locked_to_torbox(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("STAGING_ROOT", str(tmp_path / "staging"))
+    monkeypatch.setenv("SONARR_STAGING_ROOT", str(tmp_path / "sonarr"))
+    monkeypatch.setenv("DEBRID_ALL_DIR", str(tmp_path / "debrid"))
+    monkeypatch.setenv("QBIT_USERNAME", "admin")
+    monkeypatch.setenv("QBIT_PASSWORD", "adminadmin")
+    monkeypatch.setenv("DEBRID_PROVIDER", "realdebrid")
+    monkeypatch.setenv("RD_TOKEN", "legacy-rd-token")
+    monkeypatch.setenv("TORBOX_API_KEY", "torbox-token")
+    monkeypatch.setenv("ENABLE_POLLER", "0")
+
+    import app.main as main
+
+    main = importlib.reload(main)
+    client = TestClient(main.app)
+
+    assert main.settings.debrid_provider == "torbox"
+    assert main.settings.rd_token == "torbox-token"
+
+    status = client.get("/debug/status")
+    assert status.status_code == 200
+    assert status.json()["debrid_provider"] == "torbox"
+
+
 
 def test_find_matching_media_file_does_not_pick_wrong_show(tmp_path):
     debrid_root = tmp_path / "debrid"
@@ -618,3 +644,145 @@ def test_poller_uses_client_hash_as_download_client_id(tmp_path, monkeypatch):
     assert captured["download_id"] == REAL_HASH.upper()
     assert captured["folder"].startswith(str(tmp_path / "sonarr"))
     assert "Show.Name.S01E01.1080p-" in captured["folder"]
+
+
+
+def test_torbox_user_endpoint_works_with_bearer_token(monkeypatch):
+    class FakeResponse:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self._payload = payload
+            self.text = "ok"
+
+        def json(self):
+            return self._payload
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(f"http {self.status_code}")
+
+    def fake_get(url, headers=None, timeout=None, **kwargs):
+        assert url.endswith("/v1/api/user/me")
+        assert headers is not None
+        assert headers["Authorization"] == "Bearer token123"
+        return FakeResponse(200, {"success": True, "data": {"email": "user@example.com"}})
+
+    monkeypatch.setattr("app.rd_client.requests.get", fake_get)
+
+    client = RealDebridClient("token123", provider="torbox")
+    user = client.user()
+
+    assert user["email"] == "user@example.com"
+
+
+
+def test_torbox_torrent_info_is_normalized(monkeypatch):
+    class FakeResponse:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self._payload = payload
+            self.text = "ok"
+
+        def json(self):
+            return self._payload
+
+    def fake_get(url, headers=None, timeout=None, params=None, **kwargs):
+        assert url.endswith("/v1/api/torrents/mylist")
+        return FakeResponse(
+            200,
+            {
+                "success": True,
+                "data": [
+                    {
+                        "id": 42,
+                        "hash": "abcdef123456",
+                        "name": "Example.Release.S01E01.1080p",
+                        "download_state": "cached",
+                        "progress": 100,
+                        "download_speed": 0,
+                        "seeds": 12,
+                        "peers": 7,
+                        "size": 123456,
+                        "files": [
+                            {
+                                "id": 1,
+                                "short_name": "Example.Release.S01E01.1080p.mkv",
+                                "size": 123456,
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr("app.rd_client.requests.get", fake_get)
+
+    client = RealDebridClient("token123", provider="torbox")
+    info = client.torrent_info("42")
+
+    assert info["id"] == "42"
+    assert info["status"] == "cached"
+    assert info["filename"] == "Example.Release.S01E01.1080p"
+    assert info["bytes"] == 123456
+    assert info["seeders"] == 12
+    assert info["peers"] == 7
+    assert info["files"][0]["path"] == "Example.Release.S01E01.1080p.mkv"
+
+
+
+def test_webdav_root_and_all_listing_for_torbox(tmp_path, monkeypatch):
+    monkeypatch.setenv("DEBRID_PROVIDER", "torbox")
+    main = load_main(tmp_path, monkeypatch)
+
+    monkeypatch.setattr(
+        main.rd_client,
+        "list_webdav_entries",
+        lambda: [
+            {
+                "href": "/dav/__all__/Example.Release.S01E01.1080p.mkv",
+                "name": "Example.Release.S01E01.1080p.mkv",
+                "is_dir": False,
+                "size": 123456,
+                "torrent_id": "42",
+                "file_id": "1",
+            }
+        ],
+    )
+
+    client = TestClient(main.app)
+
+    root = client.request("PROPFIND", "/dav", headers={"Depth": "1"})
+    assert root.status_code == 207
+    assert "__all__" in root.text
+
+    listing = client.request("PROPFIND", "/dav/__all__", headers={"Depth": "1"})
+    assert listing.status_code == 207
+    assert "Example.Release.S01E01.1080p.mkv" in listing.text
+
+
+
+def test_webdav_file_get_redirects_to_torbox_download(tmp_path, monkeypatch):
+    monkeypatch.setenv("DEBRID_PROVIDER", "torbox")
+    main = load_main(tmp_path, monkeypatch)
+
+    monkeypatch.setattr(
+        main.rd_client,
+        "list_webdav_entries",
+        lambda: [
+            {
+                "href": "/dav/__all__/Example.Release.S01E01.1080p.mkv",
+                "name": "Example.Release.S01E01.1080p.mkv",
+                "is_dir": False,
+                "size": 123456,
+                "torrent_id": "42",
+                "file_id": "1",
+            }
+        ],
+    )
+    monkeypatch.setattr(main.rd_client, "get_download_url", lambda torrent_id, file_id: "https://cdn.example/file.mkv")
+
+    client = TestClient(main.app)
+    response = client.get("/dav/__all__/Example.Release.S01E01.1080p.mkv", follow_redirects=False)
+
+    assert response.status_code in {302, 307}
+    assert response.headers["location"] == "https://cdn.example/file.mkv"
