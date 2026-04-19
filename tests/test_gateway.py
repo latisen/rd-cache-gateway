@@ -647,9 +647,10 @@ def test_poller_downloads_torbox_file_when_mount_is_empty(tmp_path, monkeypatch)
     job = main.store.get("rdremote")
     assert job is not None
     assert job["status"] == "ready_for_arr"
-    assert Path(job["staging_path"]).exists()
+    assert Path(job["staging_path"]).is_symlink()
     assert Path(job["arr_file_path"]).is_symlink()
     assert Path(job["arr_file_path"]).resolve().stat().st_size == expected_size
+    assert str(tmp_path / "sonarr" / ".source") in str(Path(job["arr_file_path"]).resolve())
 
 
 

@@ -241,7 +241,7 @@ def create_staging_download(
     folder_name = stage_folder_name(torrent_id, Path(filename))
     host_dir = staging_root / folder_name
     visible_dir = visible_root / folder_name
-    source_path = host_dir / ".source" / filename
+    source_path = visible_root / ".source" / folder_name / filename
     source_path.parent.mkdir(parents=True, exist_ok=True)
 
     downloader(download_url, source_path, expected_size)
@@ -282,9 +282,12 @@ def check_staging_ready(
     try:
         if not staging_path.exists() and not staging_path.is_symlink():
             return False, "staging_missing", {}
-        if not staging_path.is_symlink():
-            return False, "staging_not_symlink", {}
-        target = staging_path.resolve(strict=True)
+        if staging_path.is_symlink():
+            target = staging_path.resolve(strict=True)
+        elif staging_path.is_file():
+            target = staging_path
+        else:
+            return False, "staging_not_file", {}
         if not target.exists() or not target.is_file():
             return False, "target_missing", {}
         actual_size = target.stat().st_size
