@@ -549,6 +549,26 @@ def test_find_matching_media_file_ignores_tgx_text_sidecars(tmp_path):
 
 
 
+def test_find_matching_media_file_refreshes_stale_mount_cache(tmp_path):
+    debrid_root = tmp_path / "debrid"
+    debrid_root.mkdir(parents=True, exist_ok=True)
+
+    info = {
+        "filename": "Below Deck Down Under S02E17 An Eruption Of Volcanic Proportions 1080p AMZN WEB-",
+        "files": [],
+    }
+
+    first = find_matching_media_file(info, debrid_root)
+    assert first is None
+
+    video = debrid_root / "Below.Deck.Down.Under.S02E17.An.Eruption.Of.Volcanic.Proportions.1080p.AMZN.WEB-DL.DDP2.0.H.264-NTb.mkv"
+    video.write_bytes(b"x" * 2048)
+
+    second = find_matching_media_file(info, debrid_root)
+    assert second == video
+
+
+
 def test_poller_marks_downloaded_job_ready_for_arr_using_media_file_size(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 
@@ -1119,6 +1139,56 @@ def test_torbox_torrent_info_is_normalized(monkeypatch):
     assert info["seeders"] == 12
     assert info["peers"] == 7
     assert info["files"][0]["path"] == "Example.Release.S01E01.1080p.mkv"
+
+
+
+def test_torbox_torrent_info_retries_transient_500(monkeypatch):
+    class FakeResponse:
+        def __init__(self, status_code, payload, text="ok"):
+            self.status_code = status_code
+            self._payload = payload
+            self.text = text
+
+        def json(self):
+            return self._payload
+
+    calls = {"count": 0}
+
+    def fake_get(url, headers=None, timeout=None, params=None, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return FakeResponse(500, {"success": False, "detail": "Please try again later."}, text="server error")
+        return FakeResponse(
+            200,
+            {
+                "success": True,
+                "data": [
+                    {
+                        "id": 42,
+                        "hash": "abcdef123456",
+                        "name": "Example.Release.S01E01.1080p",
+                        "download_state": "cached",
+                        "progress": 100,
+                        "download_speed": 0,
+                        "seeds": 12,
+                        "peers": 7,
+                        "size": 123456,
+                        "files": [
+                            {"id": 1, "short_name": "Example.Release.S01E01.1080p.mkv", "size": 123456}
+                        ],
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr("app.rd_client.requests.get", fake_get)
+
+    client = RealDebridClient("token123", provider="torbox")
+    info = client.torrent_info("42")
+
+    assert calls["count"] == 2
+    assert info["id"] == "42"
+    assert info["status"] == "cached"
 
 
 

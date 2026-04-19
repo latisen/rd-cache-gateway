@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -97,19 +98,39 @@ class RealDebridClient:
         }
 
     def _torbox_list_items(self, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        response = requests.get(
-            f"{self.TORBOX_BASE_URL}/torrents/mylist",
-            headers=self._headers(),
-            params=params or {"bypass_cache": False, "limit": 1000},
-            timeout=self.timeout,
-        )
-        payload = self._torbox_payload(response)
-        data = payload.get("data")
-        if isinstance(data, list):
-            return [item for item in data if isinstance(item, dict)]
-        if isinstance(data, dict):
-            return [data]
-        return []
+        query = params or {"bypass_cache": False, "limit": 1000}
+        last_error: RuntimeError | None = None
+
+        for attempt in range(1, 4):
+            response = requests.get(
+                f"{self.TORBOX_BASE_URL}/torrents/mylist",
+                headers=self._headers(),
+                params=query,
+                timeout=self.timeout,
+            )
+            try:
+                payload = self._torbox_payload(response)
+                data = payload.get("data")
+                if isinstance(data, list):
+                    return [item for item in data if isinstance(item, dict)]
+                if isinstance(data, dict):
+                    return [data]
+                return []
+            except RuntimeError as exc:
+                last_error = exc
+                if response.status_code >= 500 and attempt < 3:
+                    logger.warning(
+                        "%s mylist transient error attempt=%s status=%s detail=%s",
+                        self._label(),
+                        attempt,
+                        response.status_code,
+                        response.text[:200],
+                    )
+                    time.sleep(0.25 * attempt)
+                    continue
+                raise
+
+        raise last_error or RuntimeError("TorBox API failed: unknown error")
 
     def _torbox_find_item(self, torrent_id: str) -> dict[str, Any] | None:
         params: dict[str, Any] = {"bypass_cache": True}

@@ -64,12 +64,12 @@ def _word_overlap(a: set[str], b: set[str]) -> int:
     return len(a & b)
 
 
-def _get_media_candidates(root: Path) -> list[Path]:
+def _get_media_candidates(root: Path, force_refresh: bool = False) -> list[Path]:
     cache_key = str(root)
     now = time.time()
     with _MEDIA_INDEX_LOCK:
         cached = _MEDIA_INDEX.get(cache_key)
-        if cached and now - cached[0] < _MEDIA_INDEX_TTL:
+        if not force_refresh and cached and now - cached[0] < _MEDIA_INDEX_TTL:
             return cached[1]
 
     candidates: list[Path] = []
@@ -165,7 +165,12 @@ def find_matching_media_file(info: dict, root: Path) -> Path | None:
             return direct_item
 
     candidates = _get_media_candidates(root)
-    return _pick_best_named_match(wanted_name, [(path.name, path) for path in candidates])
+    match = _pick_best_named_match(wanted_name, [(path.name, path) for path in candidates])
+    if match is not None:
+        return match
+
+    refreshed_candidates = _get_media_candidates(root, force_refresh=True)
+    return _pick_best_named_match(wanted_name, [(path.name, path) for path in refreshed_candidates])
 
 
 def find_matching_media_entry(info: dict) -> dict | None:
