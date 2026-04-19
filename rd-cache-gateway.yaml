@@ -103,7 +103,7 @@ spec:
             - name: TORBOX_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: rd-cache-gateway-secrets
+                  name: torbox-secret
                   key: TORBOX_API_KEY
           ports:
             - containerPort: 8000
