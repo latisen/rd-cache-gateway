@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.live_log import get_log_view_html, set_jobs_provider
 from app.rd_client import RealDebridClient
+from app.api_qbit import build_categories
 from app.staging import create_staging_symlink, find_matching_media_file
 
 
@@ -595,6 +596,7 @@ def test_poller_marks_downloaded_job_ready_for_arr_using_media_file_size(tmp_pat
     assert job["status"] == "ready_for_arr"
     assert job["arr_ready_reason"] == "ready"
     assert str(tmp_path / "sonarr") in job["arr_path"]
+    assert str(tmp_path / "sonarr" / "sonarr") in job["arr_path"]
     assert media_file.name in job["arr_file_path"]
     assert "Show.Name.S01E01.1080p-rd123" in job["arr_path"]
 
@@ -865,6 +867,13 @@ def test_poller_disables_deleted_remote_torrents(tmp_path, monkeypatch):
 
 
 
+def test_qbit_categories_use_separate_category_paths():
+    categories = build_categories("/data/downloads/rd-cache-gateway")
+    assert categories["sonarr"]["savePath"] == "/data/downloads/rd-cache-gateway/sonarr"
+    assert categories["radarr"]["savePath"] == "/data/downloads/rd-cache-gateway/radarr"
+
+
+
 def test_qbit_info_uses_arr_file_name_for_output_path(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 
@@ -1025,7 +1034,7 @@ def test_poller_uses_client_hash_as_download_client_id(tmp_path, monkeypatch):
     assert job is not None
     assert job["status"] == "scan_pending"
     assert captured["download_id"] == REAL_HASH.upper()
-    assert captured["folder"].startswith(str(tmp_path / "sonarr"))
+    assert captured["folder"].startswith(str(tmp_path / "sonarr" / "sonarr"))
     assert "Show.Name.S01E01.1080p-" in captured["folder"]
 
 

@@ -196,6 +196,7 @@ class JobPoller:
                     self.settings.staging_root,
                     self.settings.visible_staging_root,
                     visible_source_file=visible_source_file,
+                    category=job.get("category"),
                 )
                 expected_media_size = extract_expected_media_size(info, source_file)
                 host_ready, host_reason, host_details = check_staging_ready(

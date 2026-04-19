@@ -28,6 +28,11 @@ def stage_folder_name(torrent_id: str, source_file: Path) -> str:
     return f"{base}-{suffix}"
 
 
+def _normalize_category(category: str | None) -> str:
+    value = re.sub(r"[^A-Za-z0-9._-]+", "-", str(category or "other").strip().lower()).strip("-._")
+    return value or "other"
+
+
 def _canonicalize_episode_patterns(value: str) -> str:
     def repl(match: re.Match[str]) -> str:
         season = int(match.group(1))
@@ -219,10 +224,12 @@ def create_staging_symlink(
     staging_root: Path,
     visible_root: Path,
     visible_source_file: Path | None = None,
+    category: str | None = None,
 ) -> tuple[Path, Path, Path]:
     folder_name = stage_folder_name(torrent_id, source_file)
-    host_dir = staging_root / folder_name
-    visible_dir = visible_root / folder_name
+    category_name = _normalize_category(category)
+    host_dir = staging_root / category_name / folder_name
+    visible_dir = visible_root / category_name / folder_name
     visible_target = visible_source_file or source_file
 
     link_path = _refresh_symlink(host_dir / source_file.name, source_file)
@@ -239,12 +246,14 @@ def create_staging_download(
     staging_root: Path,
     visible_root: Path,
     expected_size: int | None = None,
+    category: str | None = None,
 ) -> tuple[Path, Path, Path, Path]:
     filename = Path(source_name).name or "downloaded.mkv"
     folder_name = stage_folder_name(torrent_id, Path(filename))
-    host_dir = staging_root / folder_name
-    visible_dir = visible_root / folder_name
-    source_path = visible_root / ".source" / folder_name / filename
+    category_name = _normalize_category(category)
+    host_dir = staging_root / category_name / folder_name
+    visible_dir = visible_root / category_name / folder_name
+    source_path = visible_root / ".source" / category_name / folder_name / filename
     source_path.parent.mkdir(parents=True, exist_ok=True)
 
     downloader(download_url, source_path, expected_size)

@@ -226,7 +226,8 @@ def build_preferences(save_path: str) -> dict:
 
 
 def build_categories(save_path: str) -> dict:
+    root = Path(save_path)
     return {
-        "sonarr": {"name": "sonarr", "savePath": save_path},
-        "radarr": {"name": "radarr", "savePath": save_path},
+        "sonarr": {"name": "sonarr", "savePath": str(root / "sonarr")},
+        "radarr": {"name": "radarr", "savePath": str(root / "radarr")},
     }
