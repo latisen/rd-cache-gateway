@@ -337,7 +337,10 @@ async def lifespan(_: FastAPI):
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.staging_root.mkdir(parents=True, exist_ok=True)
     settings.visible_staging_root.mkdir(parents=True, exist_ok=True)
-    settings.debrid_all_dir.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        settings.debrid_all_dir.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.warning("WEBDAV startup path unavailable path=%s error=%s", settings.debrid_all_dir.parent, exc)
     if settings.enable_debug_ui:
         live_log_server.start()
     _start_webdav_mount_monitor()

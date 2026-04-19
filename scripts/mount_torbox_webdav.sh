@@ -13,7 +13,12 @@ if ! command -v rclone >/dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p "$MOUNT_POINT"
+if ! mkdir -p "$MOUNT_POINT" 2>/dev/null; then
+  echo "Mount path is unhealthy at $MOUNT_POINT; attempting forced cleanup"
+  fusermount -uz "$MOUNT_POINT" >/dev/null 2>&1 || umount -lf "$MOUNT_POINT" >/dev/null 2>&1 || true
+  rm -rf "$MOUNT_POINT" >/dev/null 2>&1 || true
+  mkdir -p "$MOUNT_POINT"
+fi
 TARGET_DIR="$MOUNT_POINT/__all__"
 
 has_real_fuse_mount() {
