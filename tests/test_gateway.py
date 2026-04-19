@@ -61,8 +61,14 @@ def test_webdav_mount_sample_detects_empty_and_ready(tmp_path, monkeypatch):
     empty_dir.mkdir(parents=True, exist_ok=True)
     assert main._webdav_mount_sample(empty_dir) is None
 
+    hidden_only_dir = tmp_path / "hidden-only-webdav"
+    hidden_only_dir.mkdir(parents=True, exist_ok=True)
+    (hidden_only_dir / ".cache").write_text("ignore", encoding="utf-8")
+    assert main._webdav_mount_sample(hidden_only_dir) is None
+
     ready_dir = tmp_path / "ready-webdav"
     ready_dir.mkdir(parents=True, exist_ok=True)
+    (ready_dir / ".probe").write_text("ignore", encoding="utf-8")
     (ready_dir / "episode.mkv").write_bytes(b"x")
     assert main._webdav_mount_sample(ready_dir) == "episode.mkv"
 

@@ -64,6 +64,8 @@ def _webdav_mount_sample(path: Path) -> str | None:
         if not path.exists() or not path.is_dir():
             return None
         for child in sorted(path.iterdir(), key=lambda item: item.name.lower()):
+            if child.name.startswith('.'):
+                continue
             return child.name
     except Exception:
         logger.exception("WEBDAV sample check failed path=%s", path)
