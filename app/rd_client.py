@@ -183,6 +183,36 @@ class RealDebridClient:
             return data
         raise RuntimeError(f"TorBox requestdl returned no download URL for torrent {torrent_id} file {file_id}")
 
+    def download_file(self, download_url: str, destination: str | Path, expected_size: int | None = None) -> Path:
+        target = Path(destination)
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        if target.exists() and target.is_file():
+            actual_size = target.stat().st_size
+            if not expected_size or actual_size == expected_size:
+                logger.info("%s reuse staged file path=%s size=%s", self._label(), target, actual_size)
+                return target
+
+        temp_target = target.with_suffix(target.suffix + ".part")
+        logger.info("%s download file url=%s path=%s", self._label(), download_url, target)
+        with requests.get(download_url, stream=True, timeout=self.timeout) as response:
+            response.raise_for_status()
+            with temp_target.open("wb") as handle:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        handle.write(chunk)
+
+        actual_size = temp_target.stat().st_size if temp_target.exists() else 0
+        if expected_size and actual_size != expected_size:
+            temp_target.unlink(missing_ok=True)
+            raise RuntimeError(
+                f"Downloaded file size mismatch for {target.name}: expected {expected_size}, got {actual_size}"
+            )
+
+        temp_target.replace(target)
+        logger.info("%s download complete path=%s size=%s", self._label(), target, actual_size)
+        return target
+
     def user(self) -> dict[str, Any]:
         if self.provider == "torbox":
             response = requests.get(

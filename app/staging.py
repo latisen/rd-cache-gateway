@@ -3,10 +3,12 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shutil
 import threading
 import time
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +91,49 @@ def similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
+def _pick_best_named_match(wanted_name: str, candidates: list[tuple[str, Any]]) -> Any | None:
+    if not candidates:
+        return None
+
+    wanted_norm = normalize_name(wanted_name)
+    wanted_ep = extract_episode_token(wanted_name)
+    wanted_words = extract_name_words(wanted_name)
+
+    exact = [item for name, item in candidates if normalize_name(name) == wanted_norm]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        return exact[0]
+
+    if wanted_ep:
+        scored: list[tuple[int, float, int, Any]] = []
+        for name, item in candidates:
+            if extract_episode_token(name) != wanted_ep:
+                continue
+            overlap = _word_overlap(wanted_words, extract_name_words(name))
+            sim = similarity(normalize_name(name), wanted_norm)
+            if overlap >= 2 or sim >= 0.92:
+                scored.append((overlap, sim, len(name), item))
+        if scored:
+            scored.sort(key=lambda item: (item[0], item[1], -item[2]), reverse=True)
+            return scored[0][3]
+
+    ranked: list[tuple[int, float, int, Any]] = []
+    for name, item in candidates:
+        overlap = _word_overlap(wanted_words, extract_name_words(name))
+        sim = similarity(normalize_name(name), wanted_norm)
+        ranked.append((overlap, sim, len(name), item))
+
+    ranked.sort(key=lambda item: (item[0], item[1], -item[2]), reverse=True)
+    best_overlap, best_sim, _, best_item = ranked[0]
+    if best_overlap >= 2 and best_sim >= 0.75:
+        return best_item
+    if best_sim >= 0.95:
+        return best_item
+
+    return None
+
+
 def find_matching_media_file(info: dict, root: Path) -> Path | None:
     if not root.exists():
         logger.warning("STAGE source root missing root=%s", root)
@@ -99,9 +144,6 @@ def find_matching_media_file(info: dict, root: Path) -> Path | None:
         return None
 
     wanted_name = Path(filename).name
-    wanted_norm = normalize_name(wanted_name)
-    wanted_ep = extract_episode_token(wanted_name)
-    wanted_words = extract_name_words(wanted_name)
 
     direct = root / wanted_name
     if direct.is_file():
@@ -116,42 +158,27 @@ def find_matching_media_file(info: dict, root: Path) -> Path | None:
             return direct_item
 
     candidates = _get_media_candidates(root)
-    if not candidates:
+    return _pick_best_named_match(wanted_name, [(path.name, path) for path in candidates])
+
+
+def find_matching_media_entry(info: dict) -> dict | None:
+    filename = info.get("filename") or info.get("original_filename")
+    if not filename:
         return None
 
-    exact = [path for path in candidates if normalize_name(path.name) == wanted_norm]
-    if len(exact) == 1:
-        return exact[0]
-    if len(exact) > 1:
-        return sorted(exact, key=lambda path: len(str(path)))[0]
+    wanted_name = Path(filename).name
+    candidates: list[tuple[str, dict]] = []
+    for item in info.get("files") or []:
+        if not isinstance(item, dict):
+            continue
+        item_name = Path(str(item.get("path") or item.get("name") or "")).name
+        if not item_name:
+            continue
+        if Path(item_name).suffix.lower() not in VIDEO_EXTENSIONS:
+            continue
+        candidates.append((item_name, item))
 
-    if wanted_ep:
-        scored: list[tuple[int, float, Path]] = []
-        for path in candidates:
-            if extract_episode_token(path.name) != wanted_ep:
-                continue
-            overlap = _word_overlap(wanted_words, extract_name_words(path.name))
-            sim = similarity(normalize_name(path.name), wanted_norm)
-            if overlap >= 2 or sim >= 0.92:
-                scored.append((overlap, sim, path))
-        if scored:
-            scored.sort(key=lambda item: (item[0], item[1], -len(str(item[2]))), reverse=True)
-            return scored[0][2]
-
-    ranked: list[tuple[int, float, Path]] = []
-    for path in candidates:
-        overlap = _word_overlap(wanted_words, extract_name_words(path.name))
-        sim = similarity(normalize_name(path.name), wanted_norm)
-        ranked.append((overlap, sim, path))
-
-    ranked.sort(key=lambda item: (item[0], item[1], -len(str(item[2]))), reverse=True)
-    best_overlap, best_sim, best_path = ranked[0]
-    if best_overlap >= 2 and best_sim >= 0.75:
-        return best_path
-    if best_sim >= 0.95:
-        return best_path
-
-    return None
+    return _pick_best_named_match(wanted_name, candidates)
 
 
 def extract_expected_media_size(info: dict, source_file: Path) -> int | None:
@@ -201,6 +228,29 @@ def create_staging_symlink(
     return link_path, visible_dir, visible_file
 
 
+def create_staging_download(
+    torrent_id: str,
+    source_name: str,
+    download_url: str,
+    downloader: Callable[[str, Path, int | None], Path | None],
+    staging_root: Path,
+    visible_root: Path,
+    expected_size: int | None = None,
+) -> tuple[Path, Path, Path, Path]:
+    filename = Path(source_name).name or "downloaded.mkv"
+    folder_name = stage_folder_name(torrent_id, Path(filename))
+    host_dir = staging_root / folder_name
+    visible_dir = visible_root / folder_name
+    source_path = host_dir / ".source" / filename
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+
+    downloader(download_url, source_path, expected_size)
+
+    link_path = _refresh_symlink(host_dir / filename, source_path)
+    visible_file = _refresh_symlink(visible_dir / filename, source_path)
+    return source_path, link_path, visible_dir, visible_file
+
+
 def cleanup_staging_for_job(torrent_id: str, staging_root: Path, visible_root: Path | None = None) -> None:
     roots = [staging_root]
     if visible_root is not None:
@@ -216,6 +266,8 @@ def cleanup_staging_for_job(torrent_id: str, staging_root: Path, visible_root: P
             for child in job_dir.iterdir():
                 if child.is_symlink() or child.is_file():
                     child.unlink(missing_ok=True)
+                elif child.is_dir():
+                    shutil.rmtree(child, ignore_errors=True)
             try:
                 job_dir.rmdir()
             except OSError:

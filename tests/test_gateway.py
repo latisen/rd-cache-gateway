@@ -594,6 +594,65 @@ def test_visible_arr_symlink_is_created_for_sonarr_import(tmp_path, monkeypatch)
 
 
 
+def test_poller_downloads_torbox_file_when_mount_is_empty(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    expected_size = 2 * 1024 * 1024
+    filename = "Below Deck Down Under S03E09 Foam Sick 1080p AMZN WEB-DL DDP2 0 H 264-NTb[EZTVx.to].mkv"
+
+    main.store.replace_all(
+        {
+            "rdremote": {
+                "torrent_id": "rdremote",
+                "rd_torrent_id": "22409617",
+                "filename": filename,
+                "status": "downloading",
+                "category": "sonarr",
+                "raw": {},
+            }
+        }
+    )
+
+    monkeypatch.setattr(main.rd_client, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        main.rd_client,
+        "torrent_info",
+        lambda torrent_id: {
+            "id": torrent_id,
+            "status": "downloaded",
+            "filename": "Below Deck Down Under S03E09 Foam Sick 1080p AMZN WEB-DL DDP2 0 H 264-NTb",
+            "bytes": expected_size,
+            "files": [
+                {
+                    "id": 0,
+                    "path": f"/completed/hash/release/{filename}",
+                    "bytes": expected_size,
+                    "selected": 1,
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(main.rd_client, "get_download_url", lambda torrent_id, file_id: f"https://example/{file_id}")
+
+    def fake_download_file(url, destination, expected_size=None):
+        target = Path(destination)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"x" * int(expected_size or 0))
+        return target
+
+    monkeypatch.setattr(main.rd_client, "download_file", fake_download_file, raising=False)
+
+    main.poller.poll_once()
+
+    job = main.store.get("rdremote")
+    assert job is not None
+    assert job["status"] == "ready_for_arr"
+    assert Path(job["staging_path"]).exists()
+    assert Path(job["arr_file_path"]).is_symlink()
+    assert Path(job["arr_file_path"]).resolve().stat().st_size == expected_size
+
+
+
 def test_poller_disables_deleted_remote_torrents(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 
