@@ -1,4 +1,5 @@
 import importlib
+import os
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -721,7 +722,7 @@ def test_create_staging_symlink_uses_visible_source_for_arr_import(tmp_path):
     source_host.parent.mkdir(parents=True, exist_ok=True)
     source_host.write_bytes(b"x" * 2048)
 
-    visible_source = tmp_path / "data" / "torbox" / "webdav" / "__all__" / "Episode.S01E01.mkv"
+    visible_source = tmp_path / "data" / "downloads" / "torbox" / "__all__" / "Episode.S01E01.mkv"
     visible_source.parent.mkdir(parents=True, exist_ok=True)
     visible_source.write_bytes(b"x" * 2048)
 
@@ -740,6 +741,8 @@ def test_create_staging_symlink_uses_visible_source_for_arr_import(tmp_path):
     assert visible_file.is_symlink()
     assert staging_path.resolve() == source_host.resolve()
     assert visible_file.resolve() == visible_source.resolve()
+    assert not os.readlink(visible_file).startswith("/")
+    assert "torbox/__all__/Episode.S01E01.mkv" in os.readlink(visible_file)
 
 
 

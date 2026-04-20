@@ -234,7 +234,13 @@ def _refresh_symlink(link_path: Path, source_file: Path) -> Path:
     link_path.parent.mkdir(parents=True, exist_ok=True)
     if link_path.exists() or link_path.is_symlink():
         link_path.unlink()
-    link_path.symlink_to(source_file, target_is_directory=False)
+
+    try:
+        link_target = os.path.relpath(str(source_file), start=str(link_path.parent))
+    except Exception:
+        link_target = str(source_file)
+
+    link_path.symlink_to(link_target, target_is_directory=False)
     return link_path
 
 
