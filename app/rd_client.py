@@ -101,7 +101,7 @@ class RealDebridClient:
         query = params or {"bypass_cache": False, "limit": 1000}
         last_error: RuntimeError | None = None
 
-        for attempt in range(1, 4):
+        for attempt in range(1, 6):
             response = requests.get(
                 f"{self.TORBOX_BASE_URL}/torrents/mylist",
                 headers=self._headers(),
@@ -118,7 +118,7 @@ class RealDebridClient:
                 return []
             except RuntimeError as exc:
                 last_error = exc
-                if response.status_code >= 500 and attempt < 3:
+                if response.status_code >= 500 and attempt < 5:
                     logger.warning(
                         "%s mylist transient error attempt=%s status=%s detail=%s",
                         self._label(),
@@ -133,7 +133,7 @@ class RealDebridClient:
         raise last_error or RuntimeError("TorBox API failed: unknown error")
 
     def _torbox_find_item(self, torrent_id: str) -> dict[str, Any] | None:
-        params: dict[str, Any] = {"bypass_cache": True}
+        params: dict[str, Any] = {"bypass_cache": False}
         if str(torrent_id).isdigit():
             params["id"] = int(torrent_id)
 

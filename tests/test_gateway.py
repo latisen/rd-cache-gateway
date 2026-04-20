@@ -677,6 +677,55 @@ def test_poller_marks_symlinked_job_ready_for_arr_even_if_virtual_size_differs(t
 
 
 
+def test_poller_uses_cached_info_when_torbox_temporarily_returns_500(tmp_path, monkeypatch):
+    main = load_main(tmp_path, monkeypatch)
+
+    debrid_root = tmp_path / "debrid"
+    debrid_root.mkdir(parents=True, exist_ok=True)
+    media_file = debrid_root / "Show.Name.S01E03.1080p.mkv"
+    media_file.write_bytes(b"x" * (2 * 1024 * 1024))
+
+    main.store.replace_all(
+        {
+            "rd500": {
+                "torrent_id": "rd500",
+                "rd_torrent_id": "rd500",
+                "filename": media_file.name,
+                "status": "downloading",
+                "category": "sonarr",
+                "raw": {
+                    "id": "rd500",
+                    "status": "downloaded",
+                    "filename": media_file.name,
+                    "bytes": 2 * 1024 * 1024,
+                    "files": [
+                        {
+                            "path": f"/{media_file.name}",
+                            "bytes": 2 * 1024 * 1024,
+                            "selected": 1,
+                        }
+                    ],
+                },
+            }
+        }
+    )
+
+    monkeypatch.setattr(main.rd_client, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        main.rd_client,
+        "torrent_info",
+        lambda torrent_id: (_ for _ in ()).throw(RuntimeError("TorBox API failed: 500 There was an error processing your request. Please try again later.")),
+    )
+
+    main.poller.poll_once()
+
+    job = main.store.get("rd500")
+    assert job is not None
+    assert job["status"] == "ready_for_arr"
+    assert job["arr_ready_reason"] == "ready"
+
+
+
 def test_poller_records_rd_failure_reason_and_stops_repolling(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 

@@ -136,7 +136,22 @@ class JobPoller:
                         logger.info("POLL queued import scan torrent_id=%s", job_id)
                     continue
 
-                info = self.rd_client.torrent_info(str(rd_id))
+                try:
+                    info = self.rd_client.torrent_info(str(rd_id))
+                except RuntimeError as exc:
+                    message = str(exc)
+                    cached_info = job.get("raw") if isinstance(job.get("raw"), dict) else None
+                    if "TorBox API failed: 500" in message and cached_info and cached_info.get("status"):
+                        info = dict(cached_info)
+                        logger.warning(
+                            "POLL using cached TorBox info torrent_id=%s rd_id=%s error=%s",
+                            job_id,
+                            rd_id,
+                            message,
+                        )
+                    else:
+                        raise
+
                 patch = {
                     "rd_status": info.get("status"),
                     "filename": info.get("filename") or job.get("filename"),
