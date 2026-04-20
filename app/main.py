@@ -57,16 +57,25 @@ set_jobs_provider(store.all)
 rd_client = RealDebridClient(settings.rd_token, provider=settings.debrid_provider)
 poller = JobPoller(store=store, rd_client=rd_client, settings=settings)
 live_log_server = LiveLogServer(port=settings.debug_web_port)
+_WEBDAV_SAMPLE_ERRORS: dict[str, str] = {}
 
 
 def _webdav_mount_sample(path: Path) -> str | None:
+    key = str(path)
     try:
         if not path.exists() or not path.is_dir():
+            _WEBDAV_SAMPLE_ERRORS.pop(key, None)
             return None
         for child in sorted(path.iterdir(), key=lambda item: item.name.lower()):
             if child.name.startswith('.'):
                 continue
+            _WEBDAV_SAMPLE_ERRORS.pop(key, None)
             return child.name
+    except OSError as exc:
+        message = str(exc)
+        if _WEBDAV_SAMPLE_ERRORS.get(key) != message:
+            logger.warning("WEBDAV sample check unavailable path=%s error=%s", path, exc)
+            _WEBDAV_SAMPLE_ERRORS[key] = message
     except Exception:
         logger.exception("WEBDAV sample check failed path=%s", path)
     return None
