@@ -25,7 +25,7 @@ spec:
           command:
             - sh
             - -c
-            - mkdir -p /config /data/downloads/rd-cache-gateway /data/downloads/torbox || true
+            - mkdir -p /config /data/downloads/rd-cache-gateway/sonarr /data/downloads/rd-cache-gateway/radarr /data/downloads/torbox || true
           securityContext:
             runAsUser: 0
           volumeMounts:
@@ -91,9 +91,9 @@ spec:
             - name: WEBDAV_MOUNT_CHECK_ENABLED
               value: "1"
             - name: WEBDAV_MOUNT_CHECK_DELAY
-              value: "5"
+              value: "10"
             - name: WEBDAV_MOUNT_CHECK_TIMEOUT
-              value: "25"
+              value: "90"
             - name: ENABLE_DEBUG_UI
               value: "1"
             - name: DEBUG_WEB_PORT
@@ -125,6 +125,7 @@ spec:
               mountPath: /config
             - name: media-data
               mountPath: /data
+              mountPropagation: HostToContainer
           readinessProbe:
             httpGet:
               path: /healthz
@@ -141,6 +142,62 @@ spec:
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 6
+        - name: torbox-webdav-mounter
+          image: rd-cache-gateway:local
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - /app/scripts/mount_torbox_webdav.sh
+          env:
+            - name: WEBDAV_URL
+              value: "http://127.0.0.1:8000/dav"
+            - name: MOUNT_POINT
+              value: "/data/downloads/torbox"
+            - name: UID_VALUE
+              value: "1000"
+            - name: GID_VALUE
+              value: "1000"
+            - name: DAEMON_MODE
+              value: "0"
+            - name: MOUNT_ATTEMPTS
+              value: "60"
+            - name: MOUNT_RETRY_DELAY
+              value: "2"
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            privileged: true
+            allowPrivilegeEscalation: true
+            capabilities:
+              add:
+                - SYS_ADMIN
+          volumeMounts:
+            - name: media-data
+              mountPath: /data
+              mountPropagation: Bidirectional
+            - name: dev-fuse
+              mountPath: /dev/fuse
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - ls /data/downloads/torbox/__all__ >/dev/null 2>&1
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - ls /data/downloads/torbox/__all__ >/dev/null 2>&1
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
       volumes:
         - name: app-data
           hostPath:
@@ -150,6 +207,10 @@ spec:
           hostPath:
             path: /srv/media/data
             type: DirectoryOrCreate
+        - name: dev-fuse
+          hostPath:
+            path: /dev/fuse
+            type: CharDevice
 ---
 apiVersion: v1
 kind: Service

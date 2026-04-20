@@ -33,14 +33,16 @@ For Real-Debrid, keep using `RD_TOKEN` and the Real-Debrid path.
 
 Recommended stable setup:
 
-- mount the TorBox WebDAV catalog on the host, outside the gateway pod
-- expose it to containers through the shared media path at `/srv/media/data/downloads/torbox`
-- let the gateway read it at `/data/downloads/torbox/__all__`
-- let the gateway create symlinks under `/data/downloads/rd-cache-gateway/<category>/...`
+- run a dedicated privileged WebDAV mounter alongside the gateway in Kubernetes
+- let that mounter own the FUSE lifecycle for `/data/downloads/torbox`
+- let the gateway only read `/data/downloads/torbox/__all__` and create symlinks under `/data/downloads/rd-cache-gateway/<category>/...`
+- keep the shared media path backed by `/srv/media/data` so Sonarr and the gateway see the same files
 
-This avoids a circular dependency where the gateway tries to mount and consume its own WebDAV inside the same pod.
+This matches the Decypharr-style model better: the app does not try to repair or own the mount itself, and the mounter can be restarted independently if the FUSE session dies.
 
-If you need a helper for the host mount, use:
+The provided deployment manifest now includes this dedicated mounter sidecar.
+
+If you prefer a host-owned mount instead, use:
 
 - [scripts/mount_torbox_webdav.sh](scripts/mount_torbox_webdav.sh)
 - [scripts/torbox-webdav.service.example](scripts/torbox-webdav.service.example)

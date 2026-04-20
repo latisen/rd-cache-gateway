@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-WEBDAV_URL="${WEBDAV_URL:-http://192.168.30.58:8000/dav}"
+WEBDAV_URL="${WEBDAV_URL:-http://127.0.0.1:8000/dav}"
 MOUNT_POINT="${MOUNT_POINT:-/data/downloads/torbox}"
 UID_VALUE="${UID_VALUE:-1000}"
 GID_VALUE="${GID_VALUE:-1000}"
