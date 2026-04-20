@@ -313,6 +313,21 @@ def cleanup_staging_for_job(torrent_id: str, staging_root: Path, visible_root: P
                 pass
 
 
+def _probe_readable(path: Path, probe_bytes: int = 4096) -> bool:
+    """Return True if the file at *path* can actually be opened and read.
+
+    A single stat() on a FUSE/WebDAV mount can succeed even when the underlying
+    network file is not accessible, so we do a real read probe before telling
+    Sonarr the file is ready for import.
+    """
+    try:
+        with path.open("rb") as fh:
+            data = fh.read(probe_bytes)
+        return len(data) > 0
+    except Exception:
+        return False
+
+
 def check_staging_ready(
     staging_path: Path,
     expected_size: int | None = None,
@@ -330,15 +345,26 @@ def check_staging_ready(
         if not target.exists() or not target.is_file():
             return False, "target_missing", {}
         actual_size = target.stat().st_size
+
+        is_link = staging_path.is_symlink()
+
+        # If stat reports a non-zero size, still do a real read probe for
+        # symlinked (WebDAV-backed) files to avoid telling Sonarr to import a
+        # file that is unreachable on the FUSE mount.
+        if is_link and not _probe_readable(target):
+            return False, "target_not_readable", {"target": str(target), "actual_size": actual_size}
+
         if actual_size < min_bytes:
             details = {"target": str(target), "actual_size": actual_size, "min_size": min_bytes}
-            if staging_path.is_symlink() and expected_size and expected_size >= min_bytes and actual_size > 0:
+            if is_link and expected_size and expected_size >= min_bytes and actual_size == 0:
+                # Virtual FUSE file: stat() returns 0 but the probe succeeded,
+                # meaning the remote server acknowledged the file exists.
                 details["expected_size"] = expected_size
                 return True, "ready_virtual_size_unverified", details
             return False, "target_too_small", details
         if expected_size and actual_size != expected_size:
             details = {"target": str(target), "actual_size": actual_size, "expected_size": expected_size}
-            if staging_path.is_symlink():
+            if is_link:
                 return True, "ready_virtual_size_unverified", details
             return False, "size_mismatch", details
         return True, "ready", {"target": str(target), "actual_size": actual_size}

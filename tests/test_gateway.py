@@ -1344,3 +1344,62 @@ def test_webdav_file_get_redirects_to_torbox_download(tmp_path, monkeypatch):
 
     assert response.status_code in {302, 307}
     assert response.headers["location"] == "https://cdn.example/file.mkv"
+
+
+# ---------------------------------------------------------------------------
+# check_staging_ready – read probe tests
+# ---------------------------------------------------------------------------
+
+from app.staging import check_staging_ready
+
+
+def test_check_staging_ready_readable_symlink_returns_ready(tmp_path):
+    """A symlink whose target is a real, readable file must return ready."""
+    real_file = tmp_path / "source.mkv"
+    real_file.write_bytes(b"x" * (2 * 1024 * 1024))
+
+    link = tmp_path / "staged" / "source.mkv"
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(real_file)
+
+    ok, reason, details = check_staging_ready(link, min_bytes=1)
+    assert ok is True
+    assert reason in {"ready", "ready_virtual_size_unverified"}
+
+
+def test_check_staging_ready_unreadable_symlink_returns_not_readable(tmp_path):
+    """A symlink whose target exists via stat() but is not readable must NOT be ready."""
+    import unittest.mock as mock
+
+    real_file = tmp_path / "source.mkv"
+    real_file.write_bytes(b"x" * (2 * 1024 * 1024))
+
+    link = tmp_path / "staged" / "source.mkv"
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(real_file)
+
+    with mock.patch("app.staging._probe_readable", return_value=False):
+        ok, reason, details = check_staging_ready(link, min_bytes=1)
+
+    assert ok is False
+    assert reason == "target_not_readable"
+
+
+def test_check_staging_ready_virtual_fuse_file_requires_readable_probe(tmp_path):
+    """A symlink to a zero-byte virtual FUSE file that passes the probe must be ready."""
+    import unittest.mock as mock
+
+    fuse_file = tmp_path / "fuse" / "source.mkv"
+    fuse_file.parent.mkdir(parents=True, exist_ok=True)
+    fuse_file.write_bytes(b"")  # virtual: stat shows 0 bytes
+
+    link = tmp_path / "staged" / "source.mkv"
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(fuse_file)
+
+    # probe succeeds → indicates the remote server acknowledged the file
+    with mock.patch("app.staging._probe_readable", return_value=True):
+        ok, reason, details = check_staging_ready(link, expected_size=2 * 1024 * 1024, min_bytes=1)
+
+    assert ok is True
+    assert reason == "ready_virtual_size_unverified"
