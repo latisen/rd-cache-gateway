@@ -1,15 +1,19 @@
 [Unit]
-Description=Mount TorBox WebDAV catalog
+Description=Mount TorBox WebDAV catalog for rd-cache-gateway
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
+# Point this at the WebDAV endpoint you want to mount. If you have a direct TorBox
+# WebDAV URL, prefer that. Otherwise you can use the gateway's /dav endpoint.
 Environment=WEBDAV_URL=http://192.168.30.58:8000/dav
-Environment=MOUNT_POINT=/srv/media/mnt/torbox/webdav
+Environment=MOUNT_POINT=/srv/media/data/downloads/torbox
+Environment=UID_VALUE=1000
+Environment=GID_VALUE=1000
 Environment=DAEMON_MODE=0
-ExecStart=/bin/bash /opt/rd-cache-gateway/scripts/mount_torbox_webdav.sh
-ExecStop=/bin/fusermount -u /srv/media/mnt/torbox/webdav
+ExecStart=/bin/sh /opt/rd-cache-gateway/scripts/mount_torbox_webdav.sh
+ExecStop=/bin/fusermount -u /srv/media/data/downloads/torbox
 Restart=always
 RestartSec=5
 TimeoutStartSec=60

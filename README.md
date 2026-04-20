@@ -31,17 +31,24 @@ For Real-Debrid, keep using `RD_TOKEN` and the Real-Debrid path.
 
 ## TorBox WebDAV mount
 
-The gateway now exposes a WebDAV catalog at:
+Recommended stable setup:
+
+- mount the TorBox WebDAV catalog on the host, outside the gateway pod
+- expose it to containers through the shared media path at `/srv/media/data/downloads/torbox`
+- let the gateway read it at `/data/downloads/torbox/__all__`
+- let the gateway create symlinks under `/data/downloads/rd-cache-gateway/<category>/...`
+
+This avoids a circular dependency where the gateway tries to mount and consume its own WebDAV inside the same pod.
+
+If you need a helper for the host mount, use:
+
+- [scripts/mount_torbox_webdav.sh](scripts/mount_torbox_webdav.sh)
+- [scripts/torbox-webdav.service.example](scripts/torbox-webdav.service.example)
+
+The gateway still exposes a debug WebDAV view at:
 
 - `http://192.168.30.58:8000/dav`
 - `http://rd-cache-gateway-internal.automation-system.svc.cluster.local:8000/dav`
-
-The catalog contains an `__all__` directory with the files from your TorBox account. Mount that WebDAV on the host at `/srv/media/mnt/torbox/webdav`, and let the app use `/mnt/torbox/webdav/__all__` inside the container.
-
-Helper files:
-
-- `scripts/mount_torbox_webdav.sh`
-- `scripts/torbox-webdav.service.example`
 
 ## Sonarr setup
 
