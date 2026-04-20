@@ -75,6 +75,53 @@ class ArrClient:
         response.raise_for_status()
         return response.json()
 
+    def check_history_for_import(self, download_id: str, since_seconds: int = 300) -> bool:
+        """Return True if *download_id* appears in the ARR history as a recently imported item.
+
+        Sonarr/Radarr mark the DownloadedEpisodesScan command as completed/successful even when no
+        files were actually imported (e.g. FileNotFoundException, quality rejection).  Checking
+        history gives us certainty that an import record exists before we mark the job as imported.
+        """
+        if not self.is_configured():
+            return False
+        try:
+            import time as _time
+            cutoff = _time.time() - since_seconds
+            params = {"pageSize": 50, "sortKey": "date", "sortDir": "desc"}
+            response = requests.get(
+                f"{self.base_url}/api/v3/history",
+                headers={"X-Api-Key": str(self.api_key)},
+                params=params,
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json()
+            records = data.get("records") or data if isinstance(data, list) else []
+            target = download_id.upper()
+            for record in records:
+                if str(record.get("downloadId") or "").upper() != target:
+                    continue
+                if record.get("eventType") not in {"grabbed", "downloadFolderImported", "downloadImported", "episodeFileImported"}:
+                    continue
+                # Accept entries without a parseable date too
+                date_str = record.get("date") or ""
+                if date_str:
+                    try:
+                        from datetime import datetime, timezone
+                        dt = datetime.fromisoformat(date_str.rstrip("Z")).replace(tzinfo=timezone.utc)
+                        if dt.timestamp() < cutoff:
+                            continue
+                    except Exception:
+                        pass
+                logger.info(
+                    "ARR history import confirmed client=%s download_id=%s event=%s",
+                    self.name, download_id, record.get("eventType"),
+                )
+                return True
+        except Exception as exc:
+            logger.warning("ARR history check failed client=%s error=%s", self.name, exc)
+        return False
+
 
 def get_arr_client(category: str | None, settings: Settings) -> ArrClient:
     normalized = (category or "sonarr").strip().lower()

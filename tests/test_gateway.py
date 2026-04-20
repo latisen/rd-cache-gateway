@@ -1042,6 +1042,9 @@ def test_poller_marks_imported_immediately_when_arr_scan_finishes(tmp_path, monk
         def get_command(self, command_id):
             return {"id": command_id, "status": "completed", "result": "successful"}
 
+        def check_history_for_import(self, download_id, since_seconds=300):
+            return True  # pretend an import record exists
+
     main.store.replace_all(
         {
             REAL_HASH: {
@@ -1085,6 +1088,54 @@ def test_poller_marks_imported_immediately_when_arr_scan_finishes(tmp_path, monk
 
 
 
+def test_poller_resets_scan_pending_when_sonarr_scan_has_no_history_record(tmp_path, monkeypatch):
+    """Sonarr reports completed/successful even when all files were rejected.
+    The poller must verify history and reset to ready_for_arr so Sonarr is retried."""
+    main = load_main(tmp_path, monkeypatch)
+
+    debrid_root = tmp_path / "debrid"
+    debrid_root.mkdir(parents=True, exist_ok=True)
+    media_file = debrid_root / "Show.Name.S01E01.1080p.mkv"
+    media_file.write_bytes(b"x" * (2 * 1024 * 1024))
+
+    class FakeArrClientNoHistory:
+        def is_configured(self):
+            return True
+
+        def get_command(self, command_id):
+            return {"id": command_id, "status": "completed", "result": "successful"}
+
+        def check_history_for_import(self, download_id, since_seconds=300):
+            return False  # Sonarr said completed but nothing was actually imported
+
+    main.store.replace_all(
+        {
+            REAL_HASH: {
+                "torrent_id": REAL_HASH,
+                "client_hash": REAL_HASH,
+                "rd_torrent_id": "rdscan",
+                "filename": media_file.name,
+                "status": "scan_pending",
+                "category": "sonarr",
+                "arr_scan_command": {"id": 99, "status": "queued", "result": None},
+                "raw": {},
+            }
+        }
+    )
+
+    monkeypatch.setattr(main.rd_client, "is_configured", lambda: True)
+    monkeypatch.setattr("app.poller.get_arr_client", lambda category, settings: FakeArrClientNoHistory())
+
+    main.poller.poll_once()
+
+    job = main.store.get(REAL_HASH)
+    assert job is not None
+    assert job["status"] == "ready_for_arr", f"expected ready_for_arr, got {job['status']}"
+    assert job.get("arr_scan_command") is None
+    assert "retry" in (job.get("last_error") or "")
+
+
+
 def test_poller_uses_client_hash_as_download_client_id(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 
@@ -1109,6 +1160,9 @@ def test_poller_uses_client_hash_as_download_client_id(tmp_path, monkeypatch):
 
         def get_command(self, command_id):
             return {"id": command_id, "status": "queued"}
+
+        def check_history_for_import(self, download_id, since_seconds=300):
+            return False
 
     main.store.replace_all(
         {

@@ -102,19 +102,55 @@ class JobPoller:
                     command_id = job["arr_scan_command"].get("id")
                     if command_id and arr_client.is_configured():
                         command = arr_client.get_command(int(command_id))
-                        status = command.get("status")
-                        result = command.get("result")
-                        if status == "completed" and result == "successful":
-                            self.store.merge(
-                                job_id,
-                                {
-                                    "status": "imported",
-                                    "imported_at": now_utc_iso(),
-                                    "last_error": None,
-                                    "arr_scan_command": command,
-                                },
-                            )
-                            logger.info("IMPORT success torrent_id=%s", job_id)
+                        cmd_status = command.get("status")
+                        cmd_result = command.get("result")
+                        if cmd_status == "completed":
+                            if cmd_result == "successful":
+                                # Sonarr reports the scan command as successful even when all
+                                # files were rejected (e.g. FileNotFoundException).  Verify via
+                                # history that an import record actually exists.
+                                download_client_id = str(job.get("client_hash") or job_id).upper()
+                                actually_imported = arr_client.check_history_for_import(download_client_id)
+                                if actually_imported:
+                                    self.store.merge(
+                                        job_id,
+                                        {
+                                            "status": "imported",
+                                            "imported_at": now_utc_iso(),
+                                            "last_error": None,
+                                            "arr_scan_command": command,
+                                        },
+                                    )
+                                    logger.info("IMPORT success torrent_id=%s", job_id)
+                                else:
+                                    # Scan completed but no import record found — reset so the
+                                    # file gets re-staged and re-triggered on the next cycle.
+                                    logger.warning(
+                                        "IMPORT scan_completed_no_history torrent_id=%s download_id=%s; resetting to ready_for_arr",
+                                        job_id, download_client_id,
+                                    )
+                                    self.store.merge(
+                                        job_id,
+                                        {
+                                            "status": "ready_for_arr",
+                                            "arr_scan_command": None,
+                                            "last_error": "scan completed but no import found in history; will retry",
+                                        },
+                                    )
+                            else:
+                                # Scan command failed — reset to allow retry
+                                logger.warning(
+                                    "IMPORT scan_failed torrent_id=%s result=%s; resetting to ready_for_arr",
+                                    job_id, cmd_result,
+                                )
+                                self.store.merge(
+                                    job_id,
+                                    {
+                                        "status": "ready_for_arr",
+                                        "arr_scan_command": None,
+                                        "last_error": f"scan result={cmd_result}; will retry",
+                                    },
+                                )
                         continue
 
                 if job.get("status") == "ready_for_arr":
