@@ -75,9 +75,23 @@ def _get_media_candidates(root: Path, force_refresh: bool = False) -> list[Path]
 
     candidates: list[Path] = []
     try:
-        for candidate in root.rglob("*"):
-            if candidate.is_file() and candidate.suffix.lower() in VIDEO_EXTENSIONS:
-                candidates.append(candidate)
+        # Re-open the directory via os.scandir to bypass the kernel's dentry
+        # cache, which can be stale in long-running processes when the FUSE
+        # mount adds new files after the process first read the directory.
+        def _walk(path: Path) -> None:
+            try:
+                with os.scandir(path) as it:
+                    for entry in it:
+                        ep = Path(entry.path)
+                        if entry.is_file(follow_symlinks=True):
+                            if ep.suffix.lower() in VIDEO_EXTENSIONS:
+                                candidates.append(ep)
+                        elif entry.is_dir(follow_symlinks=False):
+                            _walk(ep)
+            except Exception as exc:
+                logger.warning("STAGE scan subdir failed path=%s error=%s", path, exc)
+
+        _walk(root)
     except Exception as exc:
         logger.warning("STAGE scan failed root=%s error=%s", root, exc)
         return []
