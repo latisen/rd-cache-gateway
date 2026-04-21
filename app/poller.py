@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 
 from app.arr_clients import get_arr_client
 from app.config import Settings
@@ -10,12 +11,15 @@ from app.models import map_rd_status, now_utc_iso
 from app.rd_client import RealDebridClient
 from app.staging import (
     check_staging_ready,
+    cleanup_staging_for_job,
     create_staging_symlink,
     extract_episode_token,
     extract_expected_media_size,
     find_matching_media_file,
     get_last_scan_error,
 )
+
+_IMPORTED_RETAIN_SECONDS = 300  # keep imported jobs visible for 5 minutes then purge
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +95,19 @@ class JobPoller:
                 continue
 
             if job.get("status") == "imported":
+                # Auto-purge imported jobs after the retain window to keep the
+                # jobs list clean. Staging symlinks are cleaned up at this point.
+                imported_at = job.get("imported_at")
+                if imported_at:
+                    try:
+                        from datetime import datetime, timezone
+                        age = time.time() - datetime.fromisoformat(imported_at).timestamp()
+                        if age >= _IMPORTED_RETAIN_SECONDS:
+                            cleanup_staging_for_job(job_id, self.settings.staging_root, self.settings.visible_staging_root)
+                            self.store.delete(job_id)
+                            logger.info("PURGE imported job torrent_id=%s age=%.0fs", job_id, age)
+                    except Exception:
+                        pass
                 continue
 
             rd_id = job.get("rd_torrent_id") or job.get("torrent_id")
@@ -313,6 +330,18 @@ class JobPoller:
                     visible_source_file=visible_source_file,
                     category=job.get("category"),
                 )
+
+                # Reset scan failure counter if the staging path changed (e.g. after a
+                # pod restart, dedup fix, or corrected source file) so stale failure
+                # counts from a previous bad staging don't cause premature give-up.
+                prev_staging_path = job.get("staging_path") or ""
+                if prev_staging_path and prev_staging_path != str(staging_path):
+                    logger.info(
+                        "STAGE path changed torrent_id=%s old=%s new=%s; resetting scan_fail_count",
+                        job_id, prev_staging_path, staging_path,
+                    )
+                    patch["scan_fail_count"] = 0
+
                 expected_media_size = extract_expected_media_size(info, source_file)
                 host_ready, host_reason, host_details = check_staging_ready(
                     staging_path,

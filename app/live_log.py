@@ -134,6 +134,7 @@ def get_log_view_html(limit: int = 500, refresh_seconds: int = 2) -> str:
                   <div class='job-head'>
                     <strong>{html.escape(job['name'])}</strong>
                     <span class='badge'>{html.escape(job['status'])}</span>
+                    <button class='del-btn' onclick="deleteJob('{html.escape(job['job_id'])}', this)" title="Remove job and staging symlinks">&#x1F5D1; Remove</button>
                   </div>
                   <div class='meta'>RD: {html.escape(job['rd_status']) or '-'} • Seeds: {job['seeds']} • Peers: {job['peers']} • Speed: {_format_speed(job['speed'])}</div>
                   <div class='meta'>Job: {html.escape(job['job_id'])}</div>
@@ -164,8 +165,10 @@ def get_log_view_html(limit: int = 500, refresh_seconds: int = 2) -> str:
     .section {{ padding: 16px; border-top: 1px solid #1f2937; }}
     .jobs {{ list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }}
     .job {{ background: #111827; border: 1px solid #1f2937; border-radius: 8px; padding: 12px; }}
-    .job-head {{ display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; }}
+    .job-head {{ display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; align-items: center; }}
     .badge {{ background: #1f2937; border-radius: 999px; padding: 2px 8px; font-size: 12px; font-family: monospace; }}
+    .del-btn {{ margin-left: auto; background: #7f1d1d; color: #fca5a5; border: 1px solid #991b1b; border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; }}
+    .del-btn:hover {{ background: #991b1b; }}
     .meta {{ color: #cbd5e1; font-size: 13px; margin-top: 4px; font-family: monospace; }}
     .reason {{ color: #93c5fd; font-size: 12px; margin-top: 6px; font-family: monospace; }}
     .error {{ color: #fca5a5; font-size: 12px; margin-top: 6px; font-family: monospace; }}
@@ -188,6 +191,16 @@ def get_log_view_html(limit: int = 500, refresh_seconds: int = 2) -> str:
     <h2>Live API log</h2>
   </div>
   <pre>{html.escape(lines)}</pre>
+  <script>
+    function deleteJob(jobId, btn) {{
+      if (!confirm('Remove job ' + jobId + ' and its staging symlinks?')) return;
+      btn.disabled = true;
+      btn.textContent = 'Removing...';
+      fetch('http://' + window.location.hostname + ':8000/jobs/' + jobId, {{method: 'DELETE'}})
+        .then(r => r.ok ? btn.closest('li').remove() : r.json().then(d => alert('Error: ' + (d.detail || r.status))))
+        .catch(e => alert('Error: ' + e));
+    }}
+  </script>
 </body>
 </html>"""
 

@@ -98,3 +98,12 @@ class JobStore:
             jobs[new_id] = job
             self._write_unlocked(jobs)
             return dict(job)
+
+    def delete(self, job_id: str) -> bool:
+        with self._lock:
+            jobs = self._read_unlocked()
+            if job_id not in jobs:
+                return False
+            del jobs[job_id]
+            self._write_unlocked(jobs)
+            return True

@@ -533,6 +533,17 @@ def get_job(torrent_id: str) -> JobStatusResponse:
     )
 
 
+@app.delete("/jobs/{torrent_id}")
+def delete_job(torrent_id: str) -> dict[str, str]:
+    """Remove a job from the jobs list and clean up its staging symlinks.
+    Does NOT delete the torrent from TorBox."""
+    resolved_id, job = _resolve_job(torrent_id)
+    cleanup_staging_for_job(resolved_id, settings.staging_root, settings.visible_staging_root)
+    store.delete(resolved_id)
+    logger.info("DELETE job torrent_id=%s status=%s", resolved_id, job.get("status"))
+    return {"status": "deleted", "torrent_id": resolved_id}
+
+
 @app.post("/poll")
 def poll_now() -> dict[str, str]:
     poller.poll_once()
