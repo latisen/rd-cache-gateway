@@ -9,6 +9,7 @@ from pydantic import BaseModel
 JobStatus = Literal[
     "queued",
     "downloading",
+    "stalled",
     "ready",
     "staged",
     "ready_for_arr",
@@ -26,6 +27,10 @@ RD_TO_JOB_STATUS: dict[str, JobStatus] = {
     "initializing": "queued",
     "metadl": "queued",
     "downloading": "downloading",
+    "stalled": "stalled",
+    "stalled (no seeds)": "stalled",
+    "no_seeds": "stalled",
+    "no seeds": "stalled",
     "cached": "ready",
     "completed": "ready",
     "complete": "ready",
@@ -42,6 +47,7 @@ RD_TO_JOB_STATUS: dict[str, JobStatus] = {
 JOB_TO_QBIT_STATE: dict[str, str] = {
     "queued": "queuedDL",
     "downloading": "downloading",
+    "stalled": "stalledDL",
     "ready": "downloading",
     "staged": "downloading",
     "ready_for_arr": "pausedUP",

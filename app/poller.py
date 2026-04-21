@@ -264,9 +264,51 @@ class JobPoller:
                     continue
 
                 if mapped != "ready":
-                    patch["status"] = mapped
-                    self.store.merge(job_id, patch)
-                    logger.info("POLL updated torrent_id=%s status=%s rd_status=%s", job_id, mapped, info.get("status"))
+                    if mapped == "stalled":
+                        # Track when stalling started; fail after 2 minutes.
+                        stalled_since = job.get("stalled_since")
+                        if not stalled_since:
+                            patch["stalled_since"] = now_utc_iso()
+                            patch["status"] = "stalled"
+                            self.store.merge(job_id, patch)
+                            logger.warning(
+                                "POLL stalled torrent_id=%s rd_status=%s; will fail in 2 minutes",
+                                job_id, info.get("status"),
+                            )
+                        else:
+                            try:
+                                from datetime import datetime, timezone as _tz
+                                stalled_age = time.time() - datetime.fromisoformat(stalled_since).timestamp()
+                            except Exception:
+                                stalled_age = 0
+                            if stalled_age >= 120:
+                                reason = (
+                                    f"TorBox stalled for {int(stalled_age)}s with no progress. "
+                                    f"Release has no seeders or is unavailable. Sonarr should retry with a different release."
+                                )
+                                patch["status"] = "failed"
+                                patch["last_error"] = reason
+                                patch["polling_disabled"] = True
+                                patch["stalled_since"] = None
+                                self.store.merge(job_id, patch)
+                                logger.error(
+                                    "POLL stall_timeout torrent_id=%s stalled_for=%.0fs; failing job",
+                                    job_id, stalled_age,
+                                )
+                            else:
+                                patch["status"] = "stalled"
+                                self.store.merge(job_id, patch)
+                                logger.info(
+                                    "POLL stalled torrent_id=%s stalled_for=%.0fs/120s",
+                                    job_id, stalled_age,
+                                )
+                    else:
+                        # Clear stalled_since if torrent recovered
+                        if job.get("stalled_since"):
+                            patch["stalled_since"] = None
+                        patch["status"] = mapped
+                        self.store.merge(job_id, patch)
+                        logger.info("POLL updated torrent_id=%s status=%s rd_status=%s", job_id, mapped, info.get("status"))
                     continue
 
                 source_file = find_matching_media_file(info, self.settings.debrid_all_dir)

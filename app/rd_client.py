@@ -82,7 +82,13 @@ class RealDebridClient:
         if item.get("download_finished") or item.get("download_present"):
             provider_status = "completed"
         else:
-            provider_status = str(item.get("download_state") or "queued")
+            raw_state = str(item.get("download_state") or "queued").lower()
+            # Normalise all TorBox stalled variants to a single canonical value
+            # so the poller's stall-timeout logic only needs to check one string.
+            if "stall" in raw_state or "no_seed" in raw_state or "no seed" in raw_state:
+                provider_status = "stalled"
+            else:
+                provider_status = raw_state
         return {
             "id": str(item.get("id") or item.get("hash") or ""),
             "status": provider_status,
