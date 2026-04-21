@@ -120,23 +120,39 @@ class JobPoller:
 
             try:
                 if job.get("status") in ("scan_pending", "ready_for_arr"):
-                    # Guard: if the visible staging folder no longer exists (e.g.
-                    # pod restart wiped ephemeral symlinks), drop back to "ready"
-                    # so the full staging pipeline reruns and recreates them.
+                    # Guard: if the visible staging folder no longer exists, it was
+                    # either deleted by Sonarr after a successful import, or wiped by
+                    # a pod restart. Check history first — if Sonarr already imported
+                    # it, mark the job imported. Only re-stage if history is empty.
                     arr_path = job.get("arr_path")
                     if arr_path and not Path(arr_path).exists():
-                        logger.warning(
-                            "POLL staging_missing torrent_id=%s arr_path=%s status=%s; resetting to ready",
-                            job_id, arr_path, job.get("status"),
-                        )
-                        self.store.merge(job_id, {
-                            "status": "ready",
-                            "arr_scan_command": None,
-                            "arr_path": None,
-                            "arr_file_path": None,
-                            "staging_path": None,
-                            "last_error": f"staging folder missing ({arr_path}); will re-stage",
-                        })
+                        arr_client = get_arr_client(job.get("category"), self.settings)
+                        download_client_id = str(job.get("client_hash") or job_id).upper()
+                        if arr_client.is_configured() and arr_client.check_history_for_import(download_client_id):
+                            self.store.merge(job_id, {
+                                "status": "imported",
+                                "imported_at": now_utc_iso(),
+                                "arr_scan_command": None,
+                                "last_error": None,
+                                "scan_fail_count": 0,
+                            })
+                            logger.info(
+                                "IMPORT staging_gone_but_history_confirmed torrent_id=%s; marking imported",
+                                job_id,
+                            )
+                        else:
+                            logger.warning(
+                                "POLL staging_missing torrent_id=%s arr_path=%s status=%s; resetting to ready",
+                                job_id, arr_path, job.get("status"),
+                            )
+                            self.store.merge(job_id, {
+                                "status": "ready",
+                                "arr_scan_command": None,
+                                "arr_path": None,
+                                "arr_file_path": None,
+                                "staging_path": None,
+                                "last_error": f"staging folder missing ({arr_path}); will re-stage",
+                            })
                         continue
 
                 if job.get("status") == "scan_pending" and isinstance(job.get("arr_scan_command"), dict):
