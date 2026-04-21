@@ -268,9 +268,14 @@ class JobPoller:
                                 # when the scan found nothing NEW to import — which happens
                                 # when the episode was already imported in a previous cycle
                                 # (e.g. the torrent was cached and the first grab imported it).
-                                # Always check history before counting this as a failure.
+                                # History is written asynchronously by Sonarr, so retry the
+                                # check a few times before counting this as a real failure.
                                 download_client_id = str(job.get("client_hash") or job_id).upper()
                                 already_imported = arr_client.check_history_for_import(download_client_id)
+                                if not already_imported:
+                                    # Retry once after a short pause in case history isn't written yet
+                                    time.sleep(2)
+                                    already_imported = arr_client.check_history_for_import(download_client_id)
                                 if already_imported:
                                     self.store.merge(job_id, {
                                         "status": "imported",
