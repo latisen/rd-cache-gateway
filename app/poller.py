@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from pathlib import Path
 
 from app.arr_clients import get_arr_client
 from app.config import Settings
@@ -10,6 +11,7 @@ from app.jobs_store import JobStore
 from app.models import map_rd_status, now_utc_iso
 from app.rd_client import RealDebridClient
 from app.staging import (
+    add_extra_symlinks_to_staging,
     check_staging_ready,
     cleanup_staging_for_job,
     create_staging_symlink,
@@ -17,6 +19,7 @@ from app.staging import (
     extract_episode_token,
     extract_expected_media_size,
     find_matching_media_file,
+    find_sibling_media_files,
     get_last_scan_error,
 )
 
@@ -386,6 +389,31 @@ class JobPoller:
                     visible_source_file=visible_source_file,
                     category=job.get("category"),
                 )
+
+                # Season-pack support: symlink every sibling video file in the
+                # same torrent directory so Sonarr imports all episodes at once.
+                sibling_files = find_sibling_media_files(source_file)
+                if sibling_files:
+                    sibling_visible: list[Path] = []
+                    for sib in sibling_files:
+                        try:
+                            vis_sib = self.settings.visible_debrid_all_dir / sib.relative_to(self.settings.debrid_all_dir)
+                            sibling_visible.append(vis_sib if (vis_sib.exists() or vis_sib.parent.exists()) else sib)
+                        except ValueError:
+                            sibling_visible.append(sib)
+                    add_extra_symlinks_to_staging(
+                        job_id,
+                        source_file,
+                        sibling_files,
+                        self.settings.staging_root,
+                        self.settings.visible_staging_root,
+                        sibling_visible,
+                        category=job.get("category"),
+                    )
+                    logger.info(
+                        "STAGE season_pack torrent_id=%s primary=%s extra_episodes=%d",
+                        job_id, source_file.name, len(sibling_files),
+                    )
 
                 # Reset scan failure counter if the staging path changed (e.g. after a
                 # pod restart, dedup fix, or corrected source file) so stale failure

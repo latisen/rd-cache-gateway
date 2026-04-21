@@ -121,6 +121,59 @@ def episode_in_torrent_files(req_ep: str, info: dict) -> bool:
     return False
 
 
+def find_sibling_media_files(primary: Path) -> list[Path]:
+    """Return all other video files in the same directory as *primary*.
+
+    Used for season packs: when T orBox stores multiple episodes in one folder,
+    we want to symlink all of them into the staging area so Sonarr imports every
+    episode in a single folder scan.
+    """
+    siblings: list[Path] = []
+    try:
+        with os.scandir(primary.parent) as it:
+            for entry in it:
+                ep = Path(entry.path)
+                if (
+                    ep != primary
+                    and entry.is_file(follow_symlinks=True)
+                    and ep.suffix.lower() in VIDEO_EXTENSIONS
+                ):
+                    siblings.append(ep)
+    except Exception as exc:
+        logger.warning("STAGE sibling scan failed dir=%s error=%s", primary.parent, exc)
+    return siblings
+
+
+def add_extra_symlinks_to_staging(
+    torrent_id: str,
+    primary_source: Path,
+    extra_sources: list[Path],
+    staging_root: Path,
+    visible_root: Path,
+    extra_visible_sources: list[Path] | None = None,
+    category: str | None = None,
+) -> list[tuple[Path, Path]]:
+    """Add extra video files to the same staging folder as *primary_source*.
+
+    Returns a list of (host_link, visible_link) pairs for the added files.
+    """
+    folder_name = stage_folder_name(torrent_id, primary_source)
+    category_name = _normalize_category(category)
+    host_dir = staging_root / category_name / folder_name
+    visible_dir = visible_root / category_name / folder_name
+    results: list[tuple[Path, Path]] = []
+    for i, src in enumerate(extra_sources):
+        vis_src = (
+            extra_visible_sources[i]
+            if extra_visible_sources and i < len(extra_visible_sources)
+            else None
+        ) or src
+        link = _refresh_symlink(host_dir / src.name, src)
+        vis_link = _refresh_symlink(visible_dir / src.name, vis_src)
+        results.append((link, vis_link))
+    return results
+
+
 def similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
