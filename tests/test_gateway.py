@@ -1136,6 +1136,50 @@ def test_poller_resets_scan_pending_when_sonarr_scan_has_no_history_record(tmp_p
 
 
 
+def test_poller_disables_polling_after_five_consecutive_scan_failures(tmp_path, monkeypatch):
+    """After 5 consecutive unsuccessful scans the poller must stop retrying and
+    set polling_disabled so the user gets a clear error instead of an infinite loop."""
+    main = load_main(tmp_path, monkeypatch)
+
+    class FakeArrClientFailing:
+        def is_configured(self):
+            return True
+
+        def get_command(self, command_id):
+            return {"id": command_id, "status": "completed", "result": "unsuccessful"}
+
+        def check_history_for_import(self, download_id, since_seconds=300):
+            return False
+
+    main.store.replace_all(
+        {
+            REAL_HASH: {
+                "torrent_id": REAL_HASH,
+                "client_hash": REAL_HASH,
+                "rd_torrent_id": "rdfailing",
+                "status": "scan_pending",
+                "scan_fail_count": 4,  # one more will tip it over
+                "category": "sonarr",
+                "arr_scan_command": {"id": 55, "status": "queued", "result": None},
+                "raw": {},
+            }
+        }
+    )
+
+    monkeypatch.setattr(main.rd_client, "is_configured", lambda: True)
+    monkeypatch.setattr("app.poller.get_arr_client", lambda category, settings: FakeArrClientFailing())
+
+    main.poller.poll_once()
+
+    job = main.store.get(REAL_HASH)
+    assert job is not None
+    assert job.get("polling_disabled") is True, "job should be disabled after 5 failures"
+    assert job["scan_fail_count"] == 5
+    assert "mountPropagation" in (job.get("last_error") or ""), \
+        "error message should hint at the Kubernetes mountPropagation fix"
+
+
+
 def test_poller_uses_client_hash_as_download_client_id(tmp_path, monkeypatch):
     main = load_main(tmp_path, monkeypatch)
 

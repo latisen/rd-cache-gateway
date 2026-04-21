@@ -118,6 +118,7 @@ class JobPoller:
                                             "status": "imported",
                                             "imported_at": now_utc_iso(),
                                             "last_error": None,
+                                            "scan_fail_count": 0,
                                             "arr_scan_command": command,
                                         },
                                     )
@@ -138,19 +139,48 @@ class JobPoller:
                                         },
                                     )
                             else:
-                                # Scan command failed — reset to allow retry
+                                # Scan command failed — count failures and back off
+                                fail_count = int(job.get("scan_fail_count") or 0) + 1
                                 logger.warning(
-                                    "IMPORT scan_failed torrent_id=%s result=%s; resetting to ready_for_arr",
-                                    job_id, cmd_result,
+                                    "IMPORT scan_failed torrent_id=%s result=%s fail_count=%d; resetting to ready_for_arr",
+                                    job_id, cmd_result, fail_count,
                                 )
-                                self.store.merge(
-                                    job_id,
-                                    {
-                                        "status": "ready_for_arr",
-                                        "arr_scan_command": None,
-                                        "last_error": f"scan result={cmd_result}; will retry",
-                                    },
-                                )
+                                if fail_count >= 5:
+                                    # Repeated Sonarr scan failures almost always mean the ARR
+                                    # pod cannot access the symlink target (missing
+                                    # mountPropagation: HostToContainer on the Sonarr media
+                                    # volume, or the FUSE mount is not propagating to the host).
+                                    logger.error(
+                                        "IMPORT giving_up torrent_id=%s after %d scan failures; "
+                                        "check that Sonarr's media volume has mountPropagation: HostToContainer "
+                                        "so it can see the FUSE mount at /data/downloads/torbox",
+                                        job_id, fail_count,
+                                    )
+                                    self.store.merge(
+                                        job_id,
+                                        {
+                                            "status": "ready_for_arr",
+                                            "arr_scan_command": None,
+                                            "scan_fail_count": fail_count,
+                                            "polling_disabled": True,
+                                            "last_error": (
+                                                f"Sonarr scan failed {fail_count} times with result=unsuccessful. "
+                                                "Sonarr cannot read the symlink target. "
+                                                "Fix: add mountPropagation: HostToContainer to Sonarr's media volume mount "
+                                                "so the FUSE mount at /data/downloads/torbox propagates into the Sonarr pod."
+                                            ),
+                                        },
+                                    )
+                                else:
+                                    self.store.merge(
+                                        job_id,
+                                        {
+                                            "status": "ready_for_arr",
+                                            "arr_scan_command": None,
+                                            "scan_fail_count": fail_count,
+                                            "last_error": f"scan result={cmd_result} (attempt {fail_count}/5); will retry",
+                                        },
+                                    )
                         continue
 
                 if job.get("status") == "ready_for_arr":
