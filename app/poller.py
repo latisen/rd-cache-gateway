@@ -248,49 +248,64 @@ class JobPoller:
                                         },
                                     )
                             else:
-                                # Scan command failed — count failures and back off
-                                fail_count = int(job.get("scan_fail_count") or 0) + 1
-                                cmd_message = (command.get("body") or {}).get("message") or command.get("message") or ""
-                                logger.warning(
-                                    "IMPORT scan_failed torrent_id=%s result=%s fail_count=%d message=%r; resetting to ready_for_arr",
-                                    job_id, cmd_result, fail_count, cmd_message,
-                                )
-                                if fail_count >= 5:
-                                    # Repeated Sonarr scan failures almost always mean the ARR
-                                    # pod cannot access the symlink target (missing
-                                    # mountPropagation: HostToContainer on the Sonarr media
-                                    # volume, or the FUSE mount is not propagating to the host).
-                                    logger.error(
-                                        "IMPORT giving_up torrent_id=%s after %d scan failures; "
-                                        "check that Sonarr's media volume has mountPropagation: HostToContainer "
-                                        "so it can see the FUSE mount at /data/downloads/torbox",
-                                        job_id, fail_count,
-                                    )
-                                    self.store.merge(
+                                # Scan command result=unsuccessful.  Sonarr returns this
+                                # when the scan found nothing NEW to import — which happens
+                                # when the episode was already imported in a previous cycle
+                                # (e.g. the torrent was cached and the first grab imported it).
+                                # Always check history before counting this as a failure.
+                                download_client_id = str(job.get("client_hash") or job_id).upper()
+                                already_imported = arr_client.check_history_for_import(download_client_id)
+                                if already_imported:
+                                    self.store.merge(job_id, {
+                                        "status": "imported",
+                                        "imported_at": now_utc_iso(),
+                                        "last_error": None,
+                                        "scan_fail_count": 0,
+                                        "arr_scan_command": command,
+                                    })
+                                    logger.info(
+                                        "IMPORT success_via_history torrent_id=%s (scan result=unsuccessful but history confirms import)",
                                         job_id,
-                                        {
-                                            "status": "ready_for_arr",
-                                            "arr_scan_command": None,
-                                            "scan_fail_count": fail_count,
-                                            "polling_disabled": True,
-                                            "last_error": (
-                                                f"Sonarr scan failed {fail_count} times with result=unsuccessful. "
-                                                "Sonarr cannot read the symlink target. "
-                                                "Fix: add mountPropagation: HostToContainer to Sonarr's media volume mount "
-                                                "so the FUSE mount at /data/downloads/torbox propagates into the Sonarr pod."
-                                            ),
-                                        },
                                     )
                                 else:
-                                    self.store.merge(
-                                        job_id,
-                                        {
-                                            "status": "ready_for_arr",
-                                            "arr_scan_command": None,
-                                            "scan_fail_count": fail_count,
-                                            "last_error": f"scan result={cmd_result} (attempt {fail_count}/5); will retry",
-                                        },
+                                    fail_count = int(job.get("scan_fail_count") or 0) + 1
+                                    cmd_message = (command.get("body") or {}).get("message") or command.get("message") or ""
+                                    logger.warning(
+                                        "IMPORT scan_failed torrent_id=%s result=%s fail_count=%d message=%r; resetting to ready_for_arr",
+                                        job_id, cmd_result, fail_count, cmd_message,
                                     )
+                                    if fail_count >= 5:
+                                        logger.error(
+                                            "IMPORT giving_up torrent_id=%s after %d scan failures; "
+                                            "check that Sonarr's media volume has mountPropagation: HostToContainer "
+                                            "so it can see the FUSE mount at /data/downloads/torbox",
+                                            job_id, fail_count,
+                                        )
+                                        self.store.merge(
+                                            job_id,
+                                            {
+                                                "status": "ready_for_arr",
+                                                "arr_scan_command": None,
+                                                "scan_fail_count": fail_count,
+                                                "polling_disabled": True,
+                                                "last_error": (
+                                                    f"Sonarr scan failed {fail_count} times with result=unsuccessful. "
+                                                    "Sonarr cannot read the symlink target. "
+                                                    "Fix: add mountPropagation: HostToContainer to Sonarr's media volume mount "
+                                                    "so the FUSE mount at /data/downloads/torbox propagates into the Sonarr pod."
+                                                ),
+                                            },
+                                        )
+                                    else:
+                                        self.store.merge(
+                                            job_id,
+                                            {
+                                                "status": "ready_for_arr",
+                                                "arr_scan_command": None,
+                                                "scan_fail_count": fail_count,
+                                                "last_error": f"scan result={cmd_result} (attempt {fail_count}/5); will retry",
+                                            },
+                                        )
                         continue
 
                 if job.get("status") == "ready_for_arr":
@@ -300,7 +315,6 @@ class JobPoller:
                         download_client_id = str(job.get("client_hash") or job_id).upper()
                         command = arr_client.trigger_scan(self.settings.visible_staging_root.__class__(arr_path), download_client_id)
                         patch = {
-                            "arr_refresh_command": arr_client.refresh_monitored_downloads(),
                             "arr_scan_command": command,
                             "status": "scan_pending",
                             "last_error": None,
@@ -308,8 +322,16 @@ class JobPoller:
                         completed_patch = _maybe_finalize_scan(arr_client, command)
                         if completed_patch:
                             patch.update(completed_patch)
+                        # Save scan_pending to store FIRST so our qBit API reports
+                        # pausedUP, then tell Sonarr to poll download clients — it
+                        # will see the completed state and process immediately.
                         self.store.merge(job_id, patch)
                         logger.info("POLL queued import scan torrent_id=%s", job_id)
+                        try:
+                            refresh = arr_client.refresh_monitored_downloads()
+                            self.store.merge(job_id, {"arr_refresh_command": refresh})
+                        except Exception as _ref_exc:
+                            logger.warning("POLL refresh_monitored_downloads failed torrent_id=%s error=%s", job_id, _ref_exc)
                     continue
 
                 try:
@@ -552,7 +574,6 @@ class JobPoller:
                     arr_client = get_arr_client(job.get("category"), self.settings)
                     if arr_client.is_configured() and not job.get("arr_scan_command"):
                         download_client_id = str(job.get("client_hash") or job_id).upper()
-                        patch["arr_refresh_command"] = arr_client.refresh_monitored_downloads()
                         command = arr_client.trigger_scan(visible_dir, download_client_id)
                         patch["arr_scan_command"] = command
                         patch["status"] = "scan_pending"
@@ -560,7 +581,15 @@ class JobPoller:
                         if completed_patch:
                             patch.update(completed_patch)
 
+                # Save to store before calling RefreshMonitoredDownloads so Sonarr
+                # sees scan_pending → pausedUP in our qBit API when it polls us.
                 self.store.merge(job_id, patch)
+                if patch.get("status") == "scan_pending":
+                    try:
+                        refresh = arr_client.refresh_monitored_downloads()
+                        self.store.merge(job_id, {"arr_refresh_command": refresh})
+                    except Exception as _ref_exc:
+                        logger.warning("STAGE refresh_monitored_downloads failed torrent_id=%s error=%s", job_id, _ref_exc)
                 if patch["status"] == "staged":
                     logger.info(
                         "STAGE pending torrent_id=%s reason=%s details=%s",
