@@ -41,7 +41,7 @@ from app.models import (
 )
 from app.poller import JobPoller
 from app.rd_client import RealDebridClient
-from app.staging import cleanup_staging_for_job, extract_episode_token
+from app.staging import cleanup_staging_for_job, episode_in_torrent_files, extract_episode_token
 from app.webdav import build_multistatus, find_entry, normalize_subpath
 
 logging.basicConfig(
@@ -285,20 +285,32 @@ def _finalize_job(
     req_ep = extract_episode_token(original_filename)
     got_ep = extract_episode_token(provider_fn)
     if req_ep and got_ep and req_ep != got_ep:
-        mismatch_reason = (
-            f"TorBox dedup mismatch: requested {req_ep} but TorBox returned {got_ep} "
-            f"({provider_fn}). This magnet hash is cached as a different episode. "
-            f"Sonarr should retry with a different release."
-        )
-        logger.error(
-            "ADD dedup_mismatch torrent_id=%s requested=%s got=%s provider=%s",
-            job_id, req_ep, got_ep, provider_fn,
-        )
-        job = store.merge(job_id, {
-            "status": "failed",
-            "last_error": mismatch_reason,
-            "polling_disabled": True,
-        })
+        # Allow multi-episode / season-pack torrents: the torrent name may say
+        # S01E01 but the files list contains S01E02, S01E03 etc. Only fail if
+        # the requested episode is genuinely absent from all files.
+        # If the files list is empty, TorBox may not have populated it yet —
+        # defer the check to the poller which retries up to 5 times.
+        files = info.get("files") or []
+        if files and not episode_in_torrent_files(req_ep, info):
+            mismatch_reason = (
+                f"TorBox dedup mismatch: requested {req_ep} but TorBox returned {got_ep} "
+                f"({provider_fn}). This magnet hash is cached as a different episode. "
+                f"Sonarr should retry with a different release."
+            )
+            logger.error(
+                "ADD dedup_mismatch torrent_id=%s requested=%s got=%s provider=%s",
+                job_id, req_ep, got_ep, provider_fn,
+            )
+            job = store.merge(job_id, {
+                "status": "failed",
+                "last_error": mismatch_reason,
+                "polling_disabled": True,
+            })
+        else:
+            logger.info(
+                "ADD multi_ep_pack torrent_id=%s requested=%s torrent_name=%s; episode found in files",
+                job_id, req_ep, provider_fn,
+            )
 
     return job_id, job
 

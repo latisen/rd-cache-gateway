@@ -107,6 +107,20 @@ def extract_episode_token(value: str) -> str | None:
     return match.group(1).lower() if match else None
 
 
+def episode_in_torrent_files(req_ep: str, info: dict) -> bool:
+    """Return True if req_ep appears in any of the torrent's file entries.
+    Used to allow multi-episode / season-pack torrents through the dedup check:
+    the torrent *name* may be S01E01 but the files list contains S01E02, S01E03 etc.
+    """
+    for f in info.get("files") or []:
+        if not isinstance(f, dict):
+            continue
+        path = str(f.get("path") or f.get("name") or "")
+        if extract_episode_token(path) == req_ep:
+            return True
+    return False
+
+
 def similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 

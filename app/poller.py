@@ -13,6 +13,7 @@ from app.staging import (
     check_staging_ready,
     cleanup_staging_for_job,
     create_staging_symlink,
+    episode_in_torrent_files,
     extract_episode_token,
     extract_expected_media_size,
     find_matching_media_file,
@@ -320,20 +321,33 @@ class JobPoller:
                 if source_file and requested_fn:
                     req_ep = extract_episode_token(requested_fn)
                     got_ep = extract_episode_token(source_file.name)
-                    if req_ep and got_ep and req_ep != got_ep:
-                        reason = (
-                            f"TorBox dedup mismatch: requested {req_ep} but got {got_ep} "
-                            f"({source_file.name}). The magnet was deduplicated to a "
-                            f"different cached torrent. Manual intervention required."
-                        )
-                        patch["status"] = "failed"
-                        patch["last_error"] = reason
-                        patch["polling_disabled"] = True
-                        self.store.merge(job_id, patch)
-                        logger.error(
-                            "STAGE dedup_mismatch torrent_id=%s requested=%s got=%s source=%s",
-                            job_id, req_ep, got_ep, source_file.name,
-                        )
+                    if req_ep and got_ep and req_ep != got_ep and not episode_in_torrent_files(req_ep, info):
+                        dedup_count = int(job.get("dedup_check_count") or 0) + 1
+                        if dedup_count < 5:
+                            # TorBox's file list may be stale — retry a few times
+                            # before giving up to avoid false positives on multi-ep
+                            # packs whose file list hasn't fully populated yet.
+                            patch["dedup_check_count"] = dedup_count
+                            patch["status"] = "ready"  # stay in ready, keep retrying
+                            self.store.merge(job_id, patch)
+                            logger.warning(
+                                "STAGE dedup_mismatch torrent_id=%s requested=%s got=%s attempt=%d/5; retrying",
+                                job_id, req_ep, got_ep, dedup_count,
+                            )
+                        else:
+                            reason = (
+                                f"TorBox dedup mismatch: requested {req_ep} but got {got_ep} "
+                                f"({source_file.name}). The magnet was deduplicated to a "
+                                f"different cached torrent. Sonarr should retry with a different release."
+                            )
+                            patch["status"] = "failed"
+                            patch["last_error"] = reason
+                            patch["polling_disabled"] = True
+                            self.store.merge(job_id, patch)
+                            logger.error(
+                                "STAGE dedup_mismatch torrent_id=%s requested=%s got=%s giving up after %d attempts",
+                                job_id, req_ep, got_ep, dedup_count,
+                            )
                         continue
 
                 if not source_file:
