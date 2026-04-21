@@ -163,7 +163,7 @@ class RealDebridClient:
 
         entries: list[dict[str, Any]] = []
         seen_names: set[str] = set()
-        for item in self._torbox_list_items({"bypass_cache": False, "limit": 1000}):
+        for item in self._torbox_list_items({"bypass_cache": True, "limit": 1000}):
             torrent_id = str(item.get("id") or item.get("hash") or "")
             modified = item.get("updated_at") or item.get("created_at")
             for file_item in item.get("files") or []:
