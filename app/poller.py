@@ -23,7 +23,7 @@ from app.staging import (
     get_last_scan_error,
 )
 
-_IMPORTED_RETAIN_SECONDS = 300  # keep imported jobs visible for 5 minutes then purge
+_IMPORTED_RETAIN_SECONDS = 30  # purge imported jobs after 30 s — just enough for one extra poll cycle
 
 logger = logging.getLogger(__name__)
 

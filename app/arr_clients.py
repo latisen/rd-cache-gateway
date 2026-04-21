@@ -75,19 +75,23 @@ class ArrClient:
         response.raise_for_status()
         return response.json()
 
-    def check_history_for_import(self, download_id: str, since_seconds: int = 300) -> bool:
-        """Return True if *download_id* appears in the ARR history as a recently imported item.
+    def check_history_for_import(self, download_id: str, since_seconds: int = 86400) -> bool:
+        """Return True if *download_id* appears in the ARR history as a grabbed or imported item.
 
         Sonarr/Radarr mark the DownloadedEpisodesScan command as completed/successful even when no
         files were actually imported (e.g. FileNotFoundException, quality rejection).  Checking
         history gives us certainty that an import record exists before we mark the job as imported.
+
+        The default window is 24 h because the 'grabbed' event is recorded when Sonarr first grabbed
+        the release — which may have been hours before the scan command completed — so a short window
+        like 5 minutes would miss it every time.
         """
         if not self.is_configured():
             return False
         try:
             import time as _time
             cutoff = _time.time() - since_seconds
-            params = {"pageSize": 50, "sortKey": "date", "sortDir": "desc"}
+            params = {"pageSize": 200, "sortKey": "date", "sortDir": "desc"}
             response = requests.get(
                 f"{self.base_url}/api/v3/history",
                 headers={"X-Api-Key": str(self.api_key)},
@@ -101,21 +105,30 @@ class ArrClient:
             for record in records:
                 if str(record.get("downloadId") or "").upper() != target:
                     continue
-                if record.get("eventType") not in {"grabbed", "downloadFolderImported", "downloadImported", "episodeFileImported"}:
+                event_type = record.get("eventType") or ""
+                if event_type not in {
+                    "grabbed",
+                    "downloadFolderImported",
+                    "downloadImported",
+                    "episodeFileImported",
+                    "seriesFolderImported",
+                }:
                     continue
-                # Accept entries without a parseable date too
-                date_str = record.get("date") or ""
-                if date_str:
-                    try:
-                        from datetime import datetime, timezone
-                        dt = datetime.fromisoformat(date_str.rstrip("Z")).replace(tzinfo=timezone.utc)
-                        if dt.timestamp() < cutoff:
-                            continue
-                    except Exception:
-                        pass
+                # Apply the time cutoff only to import events; 'grabbed' is always
+                # recorded at grab-time (hours before the scan), so skip the cutoff for it.
+                if event_type != "grabbed":
+                    date_str = record.get("date") or ""
+                    if date_str:
+                        try:
+                            from datetime import datetime, timezone
+                            dt = datetime.fromisoformat(date_str.rstrip("Z")).replace(tzinfo=timezone.utc)
+                            if dt.timestamp() < cutoff:
+                                continue
+                        except Exception:
+                            pass
                 logger.info(
-                    "ARR history import confirmed client=%s download_id=%s event=%s",
-                    self.name, download_id, record.get("eventType"),
+                    "ARR history confirmed client=%s download_id=%s event=%s",
+                    self.name, download_id, event_type,
                 )
                 return True
         except Exception as exc:
