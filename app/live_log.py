@@ -114,7 +114,7 @@ def _format_speed(value: int) -> str:
     return "0.0 B/s"
 
 
-def get_log_view_html(limit: int = 500, refresh_seconds: int = 2) -> str:
+def get_log_view_html(limit: int = 500, refresh_seconds: int = 5) -> str:
     entries = get_recent_logs(limit)
     lines = "\n".join(item.get("formatted") or item.get("message") or "" for item in entries)
     if not lines:
@@ -153,7 +153,6 @@ def get_log_view_html(limit: int = 500, refresh_seconds: int = 2) -> str:
 <html>
 <head>
   <meta charset=\"utf-8\" />
-  <meta http-equiv=\"refresh\" content=\"{max(1, refresh_seconds)}\" />
   <title>rd-cache-gateway live log</title>
   <style>
     body {{ background: #0b1020; color: #e5e7eb; font-family: Arial, sans-serif; margin: 0; }}
@@ -192,13 +191,25 @@ def get_log_view_html(limit: int = 500, refresh_seconds: int = 2) -> str:
   </div>
   <pre>{html.escape(lines)}</pre>
   <script>
+    var _reloadTimer = setTimeout(function() {{ location.reload(); }}, {max(1, refresh_seconds) * 1000});
     function deleteJob(jobId, btn) {{
       if (!confirm('Remove job ' + jobId + ' and its staging symlinks?')) return;
+      clearTimeout(_reloadTimer);
       btn.disabled = true;
       btn.textContent = 'Removing...';
       fetch('http://' + window.location.hostname + ':8000/jobs/' + jobId, {{method: 'DELETE'}})
-        .then(r => r.ok ? btn.closest('li').remove() : r.json().then(d => alert('Error: ' + (d.detail || r.status))))
-        .catch(e => alert('Error: ' + e));
+        .then(function(r) {{
+          if (r.ok) {{
+            btn.closest('li').remove();
+          }} else {{
+            r.json().then(function(d) {{ alert('Error: ' + (d.detail || r.status)); }});
+          }}
+          _reloadTimer = setTimeout(function() {{ location.reload(); }}, {max(1, refresh_seconds) * 1000});
+        }})
+        .catch(function(e) {{
+          alert('Error: ' + e);
+          _reloadTimer = setTimeout(function() {{ location.reload(); }}, {max(1, refresh_seconds) * 1000});
+        }});
     }}
   </script>
 </body>
