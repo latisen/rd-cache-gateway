@@ -135,8 +135,8 @@ class RealDebridClient:
 
         raise last_error or RuntimeError("TorBox API failed: unknown error")
 
-    def _torbox_find_item(self, torrent_id: str) -> dict[str, Any] | None:
-        params: dict[str, Any] = {"bypass_cache": False}
+    def _torbox_find_item(self, torrent_id: str, bypass_cache: bool = False) -> dict[str, Any] | None:
+        params: dict[str, Any] = {"bypass_cache": bypass_cache}
         if str(torrent_id).isdigit():
             params["id"] = int(torrent_id)
 
@@ -349,7 +349,7 @@ class RealDebridClient:
         logger.info("%s poll torrent_id=%s", self._label(), torrent_id)
 
         if self.provider == "torbox":
-            item = self._torbox_find_item(torrent_id)
+            item = self._torbox_find_item(torrent_id, bypass_cache=True)
             if item is None:
                 raise RuntimeError(f"TorBox info failed for {torrent_id}: torrent not found")
             payload = self._normalize_torbox_item(item)
