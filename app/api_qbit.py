@@ -137,7 +137,14 @@ def build_qbit_torrent_list(
         display_hash = str(job.get("client_hash") or torrent_id).lower()
 
         arr_file_path = job.get("arr_file_path")
-        if arr_file_path:
+        season_pack_siblings = int(job.get("season_pack_siblings") or 0)
+        if arr_file_path and season_pack_siblings > 0:
+            # Season pack: report the staging folder so Sonarr scans all
+            # symlinked episode files in it, not just the primary one.
+            save_dir = str(Path(arr_file_path).parent)
+            content_path = save_dir
+            display_name = str(job.get("filename") or Path(arr_file_path).name)
+        elif arr_file_path:
             content_path = str(arr_file_path)
             save_dir = str(Path(arr_file_path).parent)
             display_name = Path(arr_file_path).name

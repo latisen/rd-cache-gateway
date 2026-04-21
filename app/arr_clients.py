@@ -123,6 +123,87 @@ class ArrClient:
         return False
 
 
+    def attempt_manual_import(self, folder: Path, download_id: str) -> int:
+        """Fallback: use Sonarr's /api/v3/manualimport to directly import files.
+
+        Used when DownloadedEpisodesScan repeatedly completes without any import
+        history (e.g. Sonarr rejects the file for an internal reason but the scan
+        command still says 'successful').
+
+        Returns the number of files queued for import (0 = nothing importable found).
+        """
+        if not self.is_configured():
+            return 0
+        try:
+            # Step 1: ask Sonarr to parse the folder and return import candidates.
+            resp = requests.get(
+                f"{self.base_url}/api/v3/manualimport",
+                headers={"X-Api-Key": str(self.api_key)},
+                params={
+                    "folder": str(folder),
+                    "downloadId": download_id,
+                    "filterExistingFiles": "false",
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            candidates: list[dict] = resp.json() if isinstance(resp.json(), list) else []
+            if not candidates:
+                logger.info(
+                    "ARR manual_import no_candidates client=%s folder=%s download_id=%s",
+                    self.name, folder, download_id,
+                )
+                return 0
+
+            importable: list[dict] = []
+            for item in candidates:
+                series = item.get("series") or {}
+                episodes = item.get("episodes") or []
+                if not series.get("id") or not episodes:
+                    logger.warning(
+                        "ARR manual_import skip_unresolved client=%s path=%s rejections=%s",
+                        self.name, item.get("path"), item.get("rejections"),
+                    )
+                    continue
+                importable.append({
+                    "path": item["path"],
+                    "seriesId": series["id"],
+                    "episodeIds": [ep["id"] for ep in episodes],
+                    "quality": item.get("quality"),
+                    "languages": item.get("languages") or [],
+                    "releaseGroup": item.get("releaseGroup") or "",
+                    "downloadId": download_id,
+                    "shouldReplace": False,
+                })
+
+            if not importable:
+                logger.warning(
+                    "ARR manual_import no_importable client=%s folder=%s candidates=%d",
+                    self.name, folder, len(candidates),
+                )
+                return 0
+
+            # Step 2: POST the import list to Sonarr.
+            resp2 = requests.post(
+                f"{self.base_url}/api/v3/manualimport",
+                headers=self._headers(),
+                json=importable,
+                timeout=30,
+            )
+            resp2.raise_for_status()
+            logger.info(
+                "ARR manual_import submitted client=%s folder=%s count=%d",
+                self.name, folder, len(importable),
+            )
+            return len(importable)
+        except Exception as exc:
+            logger.warning(
+                "ARR manual_import failed client=%s folder=%s error=%s",
+                self.name, folder, exc,
+            )
+            return 0
+
+
 def get_arr_client(category: str | None, settings: Settings) -> ArrClient:
     normalized = (category or "sonarr").strip().lower()
     if normalized == "radarr":

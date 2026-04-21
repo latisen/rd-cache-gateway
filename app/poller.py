@@ -119,9 +119,63 @@ class JobPoller:
                 continue
 
             try:
+                if job.get("status") in ("scan_pending", "ready_for_arr"):
+                    # Guard: if the visible staging folder no longer exists (e.g.
+                    # pod restart wiped ephemeral symlinks), drop back to "ready"
+                    # so the full staging pipeline reruns and recreates them.
+                    arr_path = job.get("arr_path")
+                    if arr_path and not Path(arr_path).exists():
+                        logger.warning(
+                            "POLL staging_missing torrent_id=%s arr_path=%s status=%s; resetting to ready",
+                            job_id, arr_path, job.get("status"),
+                        )
+                        self.store.merge(job_id, {
+                            "status": "ready",
+                            "arr_scan_command": None,
+                            "arr_path": None,
+                            "arr_file_path": None,
+                            "staging_path": None,
+                            "last_error": f"staging folder missing ({arr_path}); will re-stage",
+                        })
+                        continue
+
                 if job.get("status") == "scan_pending" and isinstance(job.get("arr_scan_command"), dict):
                     arr_client = get_arr_client(job.get("category"), self.settings)
-                    command_id = job["arr_scan_command"].get("id")
+                    arr_scan_cmd = job["arr_scan_command"]
+                    command_id = arr_scan_cmd.get("id")
+
+                    # Manual-import sentinel: no command id, just poll history
+                    # until Sonarr finishes importing (up to ~90 s, then retry).
+                    if not command_id and arr_scan_cmd.get("manual_import"):
+                        download_client_id = str(job.get("client_hash") or job_id).upper()
+                        if arr_client.is_configured() and arr_client.check_history_for_import(download_client_id, since_seconds=600):
+                            self.store.merge(job_id, {
+                                "status": "imported",
+                                "imported_at": now_utc_iso(),
+                                "last_error": None,
+                                "scan_fail_count": 0,
+                            })
+                            logger.info("IMPORT manual_import success torrent_id=%s", job_id)
+                        else:
+                            # Check how long since we submitted; give up after 90 s
+                            submitted_at = arr_scan_cmd.get("submitted_at") or ""
+                            try:
+                                from datetime import datetime, timezone as _tz
+                                wait_age = time.time() - datetime.fromisoformat(submitted_at).timestamp()
+                            except Exception:
+                                wait_age = 999
+                            if wait_age > 90:
+                                logger.warning(
+                                    "IMPORT manual_import no_history_after=%.0fs torrent_id=%s; resetting",
+                                    wait_age, job_id,
+                                )
+                                self.store.merge(job_id, {
+                                    "status": "ready_for_arr",
+                                    "arr_scan_command": None,
+                                    "last_error": "manual import submitted but no history found after 90s; will retry",
+                                })
+                        continue
+
                     if command_id and arr_client.is_configured():
                         command = arr_client.get_command(int(command_id))
                         cmd_status = command.get("status")
@@ -146,18 +200,51 @@ class JobPoller:
                                     )
                                     logger.info("IMPORT success torrent_id=%s", job_id)
                                 else:
-                                    # Scan completed but no import record found — reset so the
-                                    # file gets re-staged and re-triggered on the next cycle.
+                                    # Scan completed but no import record found.
+                                    # After 2 failures, fall back to the manual import API
+                                    # which directly tells Sonarr to import each file,
+                                    # bypassing the DownloadedEpisodesScan flow.
+                                    scan_fail_count = int(job.get("scan_fail_count") or 0) + 1
+                                    arr_path = job.get("arr_path")
+                                    if scan_fail_count >= 2 and arr_path and arr_client.is_configured():
+                                        logger.warning(
+                                            "IMPORT scan_completed_no_history torrent_id=%s attempt=%d; trying manual import folder=%s",
+                                            job_id, scan_fail_count, arr_path,
+                                        )
+                                        queued = arr_client.attempt_manual_import(
+                                            Path(arr_path), download_client_id,
+                                        )
+                                        if queued > 0:
+                                            self.store.merge(job_id, {
+                                                "status": "scan_pending",
+                                                "arr_scan_command": {
+                                                    "manual_import": True,
+                                                    "submitted_at": now_utc_iso(),
+                                                },
+                                                "scan_fail_count": scan_fail_count,
+                                                "last_error": (
+                                                    f"scan had no history after {scan_fail_count} attempt(s); "
+                                                    f"manual import submitted for {queued} file(s)"
+                                                ),
+                                            })
+                                            logger.info(
+                                                "IMPORT manual_import_submitted torrent_id=%s files=%d",
+                                                job_id, queued,
+                                            )
+                                            continue
+                                    # Manual import not possible or returned 0 candidates —
+                                    # keep retrying the scan.
                                     logger.warning(
-                                        "IMPORT scan_completed_no_history torrent_id=%s download_id=%s; resetting to ready_for_arr",
-                                        job_id, download_client_id,
+                                        "IMPORT scan_completed_no_history torrent_id=%s download_id=%s attempt=%d; resetting to ready_for_arr",
+                                        job_id, download_client_id, scan_fail_count,
                                     )
                                     self.store.merge(
                                         job_id,
                                         {
                                             "status": "ready_for_arr",
                                             "arr_scan_command": None,
-                                            "last_error": "scan completed but no import found in history; will retry",
+                                            "scan_fail_count": scan_fail_count,
+                                            "last_error": f"scan completed but no import found in history (attempt {scan_fail_count}); will retry",
                                         },
                                     )
                             else:
@@ -451,6 +538,7 @@ class JobPoller:
                         "staging_path": str(staging_path),
                         "arr_path": str(visible_dir),
                         "arr_file_path": str(visible_file),
+                        "season_pack_siblings": len(sibling_files),
                         "arr_ready_reason": reason,
                         "arr_ready_details": details,
                         "status": "staged",
