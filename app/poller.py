@@ -141,9 +141,10 @@ class JobPoller:
                             else:
                                 # Scan command failed — count failures and back off
                                 fail_count = int(job.get("scan_fail_count") or 0) + 1
+                                cmd_message = (command.get("body") or {}).get("message") or command.get("message") or ""
                                 logger.warning(
-                                    "IMPORT scan_failed torrent_id=%s result=%s fail_count=%d; resetting to ready_for_arr",
-                                    job_id, cmd_result, fail_count,
+                                    "IMPORT scan_failed torrent_id=%s result=%s fail_count=%d message=%r; resetting to ready_for_arr",
+                                    job_id, cmd_result, fail_count, cmd_message,
                                 )
                                 if fail_count >= 5:
                                     # Repeated Sonarr scan failures almost always mean the ARR
