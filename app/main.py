@@ -249,13 +249,20 @@ def _finalize_job(
     job_id = normalized_client_hash.lower()
     if temp_id != job_id:
         store.replace_key(temp_id, job_id)
+    # Preserve the original requested filename (from the magnet name / torrent file name)
+    # so staging can match against the episode Sonarr actually grabbed, even when TorBox
+    # deduplicates the torrent and returns a different cached entry with a different name.
+    existing = store.get(job_id) or store.get(temp_id) or {}
+    original_filename = existing.get("requested_filename") or existing.get("filename") or info.get("filename") or job_id
     job = store.merge(
         job_id,
         {
             "torrent_id": job_id,
             "client_hash": normalized_client_hash,
             "rd_torrent_id": rd_id,
-            "filename": info.get("filename") or job_id,
+            "filename": original_filename,
+            "requested_filename": original_filename,
+            "provider_filename": info.get("filename") or job_id,
             "saved_at": now_utc_iso(),
             "last_checked_at": now_utc_iso(),
             "rd_status": info.get("status"),

@@ -221,7 +221,10 @@ class JobPoller:
 
                 patch = {
                     "rd_status": info.get("status"),
-                    "filename": info.get("filename") or job.get("filename"),
+                    # Keep the original requested filename; don't overwrite with TorBox's
+                    # provider filename which may point to a different deduplicated torrent.
+                    "filename": job.get("requested_filename") or job.get("filename") or info.get("filename"),
+                    "provider_filename": info.get("filename"),
                     "raw": info,
                     "last_checked_at": now_utc_iso(),
                     "last_error": None,
