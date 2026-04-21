@@ -11,6 +11,7 @@ from app.rd_client import RealDebridClient
 from app.staging import (
     check_staging_ready,
     create_staging_symlink,
+    extract_episode_token,
     extract_expected_media_size,
     find_matching_media_file,
     get_last_scan_error,
@@ -252,6 +253,30 @@ class JobPoller:
                     continue
 
                 source_file = find_matching_media_file(info, self.settings.debrid_all_dir)
+
+                # Detect TorBox dedup mismatch: if the requested episode token
+                # (from the Sonarr grab) doesn't match what's actually on disk,
+                # fail fast instead of staging the wrong episode and looping.
+                requested_fn = job.get("requested_filename") or job.get("filename") or ""
+                if source_file and requested_fn:
+                    req_ep = extract_episode_token(requested_fn)
+                    got_ep = extract_episode_token(source_file.name)
+                    if req_ep and got_ep and req_ep != got_ep:
+                        reason = (
+                            f"TorBox dedup mismatch: requested {req_ep} but got {got_ep} "
+                            f"({source_file.name}). The magnet was deduplicated to a "
+                            f"different cached torrent. Manual intervention required."
+                        )
+                        patch["status"] = "failed"
+                        patch["last_error"] = reason
+                        patch["polling_disabled"] = True
+                        self.store.merge(job_id, patch)
+                        logger.error(
+                            "STAGE dedup_mismatch torrent_id=%s requested=%s got=%s source=%s",
+                            job_id, req_ep, got_ep, source_file.name,
+                        )
+                        continue
+
                 if not source_file:
                     patch["status"] = "ready"
                     patch["arr_ready_reason"] = "source_not_found"

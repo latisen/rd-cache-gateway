@@ -24,6 +24,7 @@ RD_TO_JOB_STATUS: dict[str, JobStatus] = {
     "pending": "queued",
     "processing": "queued",
     "initializing": "queued",
+    "metadl": "queued",
     "downloading": "downloading",
     "cached": "ready",
     "completed": "ready",

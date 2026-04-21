@@ -79,7 +79,10 @@ class RealDebridClient:
                 }
             )
 
-        provider_status = str(item.get("download_state") or "cached" if item.get("download_finished") else item.get("download_state") or "queued")
+        if item.get("download_finished") or item.get("download_present"):
+            provider_status = "completed"
+        else:
+            provider_status = str(item.get("download_state") or "queued")
         return {
             "id": str(item.get("id") or item.get("hash") or ""),
             "status": provider_status,
