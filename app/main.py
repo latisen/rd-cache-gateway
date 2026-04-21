@@ -343,6 +343,7 @@ def _add_magnet_job(magnet_uri: str, category: str, *, raise_on_error: bool = Fa
         info = fetch_rd_info_raw(rd_id)
         logger.info("ADD linked temp_id=%s rd_id=%s", temp_id, rd_id)
         job_id, job = _finalize_job(temp_id, rd_id, info, category, "magnet", client_hash=client_hash)
+        threading.Thread(target=lambda: poller.kick(job_id), daemon=True, name=f"kick-{job_id[:8]}").start()
         return job_id, job
     except Exception as exc:
         logger.exception("ADD failed temp_id=%s", temp_id)
@@ -376,6 +377,7 @@ def _add_torrent_file_job(
         info = fetch_rd_info_raw(rd_id)
         logger.info("ADD linked temp_id=%s rd_id=%s", temp_id, rd_id)
         job_id, job = _finalize_job(temp_id, rd_id, info, category, "torrent_file", client_hash=client_hash)
+        threading.Thread(target=lambda: poller.kick(job_id), daemon=True, name=f"kick-{job_id[:8]}").start()
         return job_id, job
     except Exception as exc:
         logger.exception("ADD failed temp_id=%s", temp_id)
