@@ -114,9 +114,18 @@ class ArrClient:
                     "seriesFolderImported",
                 }:
                     continue
-                # Apply the time cutoff only to import events; 'grabbed' is always
-                # recorded at grab-time (hours before the scan), so skip the cutoff for it.
-                if event_type != "grabbed":
+                # Apply the time cutoff only to truly fresh-import events.
+                # 'grabbed' is always recorded at grab-time (hours before the scan).
+                # 'downloadFolderImported' / 'episodeFileImported' from a previous
+                # grab of the same cached hash may also be older than the window —
+                # if the hash is in history at all, the episode is already on disk.
+                skip_cutoff_events = {
+                    "grabbed",
+                    "downloadFolderImported",
+                    "episodeFileImported",
+                    "seriesFolderImported",
+                }
+                if event_type not in skip_cutoff_events:
                     date_str = record.get("date") or ""
                     if date_str:
                         try:

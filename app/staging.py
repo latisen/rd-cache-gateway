@@ -121,26 +121,31 @@ def episode_in_torrent_files(req_ep: str, info: dict) -> bool:
     return False
 
 
-def find_sibling_media_files(primary: Path) -> list[Path]:
-    """Return all other video files in the same directory as *primary*.
+def find_sibling_media_files(primary: Path, info: dict, root: Path) -> list[Path]:
+    """Return all other video files belonging to this torrent, excluding *primary*.
 
-    Used for season packs: when T orBox stores multiple episodes in one folder,
-    we want to symlink all of them into the staging area so Sonarr imports every
-    episode in a single folder scan.
+    Uses the torrent's own ``info["files"]`` list so we only get files from THIS
+    specific torrent — not every file in TorBox's flat __all__ directory.
+    For each file entry, the file is looked up in *root* by filename.
     """
     siblings: list[Path] = []
-    try:
-        with os.scandir(primary.parent) as it:
-            for entry in it:
-                ep = Path(entry.path)
-                if (
-                    ep != primary
-                    and entry.is_file(follow_symlinks=True)
-                    and ep.suffix.lower() in VIDEO_EXTENSIONS
-                ):
-                    siblings.append(ep)
-    except Exception as exc:
-        logger.warning("STAGE sibling scan failed dir=%s error=%s", primary.parent, exc)
+    primary_name = primary.name
+    for f in info.get("files") or []:
+        if not isinstance(f, dict):
+            continue
+        raw_path = str(f.get("path") or f.get("name") or "")
+        if not raw_path:
+            continue
+        fname = Path(raw_path).name
+        if not fname or Path(fname).suffix.lower() not in VIDEO_EXTENSIONS:
+            continue
+        if fname == primary_name:
+            continue
+        candidate = root / fname
+        if candidate.is_file():
+            siblings.append(candidate)
+        else:
+            logger.debug("STAGE sibling not found on disk file=%s root=%s", fname, root)
     return siblings
 
 

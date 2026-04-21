@@ -479,7 +479,9 @@ class JobPoller:
 
                 # Season-pack support: symlink every sibling video file in the
                 # same torrent directory so Sonarr imports all episodes at once.
-                sibling_files = find_sibling_media_files(source_file)
+                # Use info["files"] (not filesystem scan) so we only pick up files
+                # belonging to THIS torrent, not every file in the flat __all__ dir.
+                sibling_files = find_sibling_media_files(source_file, info, self.settings.debrid_all_dir)
                 if sibling_files:
                     sibling_visible: list[Path] = []
                     for sib in sibling_files:
