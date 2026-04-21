@@ -75,6 +75,35 @@ class ArrClient:
         response.raise_for_status()
         return response.json()
 
+    def check_queue_for_download(self, download_id: str) -> bool:
+        """Return True if *download_id* is still present in Sonarr's download queue.
+
+        When this returns False after a completed scan, Sonarr has removed the item
+        from its tracked-download queue — which means it successfully imported it
+        (or explicitly removed it). Used to confirm imports when history is ambiguous.
+        """
+        if not self.is_configured():
+            return False
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/v3/queue",
+                headers={"X-Api-Key": str(self.api_key)},
+                params={"pageSize": 200, "includeUnknownSeriesItems": "true"},
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json()
+            records = data.get("records") or (data if isinstance(data, list) else [])
+            target = download_id.upper()
+            for record in records:
+                if str(record.get("downloadId") or "").upper() == target:
+                    return True
+            return False
+        except Exception as exc:
+            logger.warning("ARR queue check failed client=%s error=%s", self.name, exc)
+            # On error, assume it's still in queue (safe default)
+            return True
+
     def check_history_for_import(self, download_id: str, since_seconds: int = 86400) -> bool:
         """Return True if *download_id* appears in the ARR history as a grabbed or imported item.
 

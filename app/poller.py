@@ -265,17 +265,29 @@ class JobPoller:
                                     )
                             else:
                                 # Scan command result=unsuccessful.  Sonarr returns this
-                                # when the scan found nothing NEW to import — which happens
-                                # when the episode was already imported in a previous cycle
-                                # (e.g. the torrent was cached and the first grab imported it).
-                                # History is written asynchronously by Sonarr, so retry the
-                                # check a few times before counting this as a real failure.
+                                # when the scan found nothing NEW to import — often because
+                                # the episode was already imported via RefreshMonitoredDownloads.
+                                # Three signals confirm a successful import:
+                                #   1. History has a matching downloadId entry
+                                #   2. Our download is no longer in Sonarr's queue
+                                # Check both before counting as a real failure.
                                 download_client_id = str(job.get("client_hash") or job_id).upper()
                                 already_imported = arr_client.check_history_for_import(download_client_id)
                                 if not already_imported:
-                                    # Retry once after a short pause in case history isn't written yet
-                                    time.sleep(2)
+                                    # Brief pause — Sonarr writes history asynchronously
+                                    time.sleep(3)
                                     already_imported = arr_client.check_history_for_import(download_client_id)
+                                if not already_imported:
+                                    # Final signal: if our item is gone from Sonarr's queue,
+                                    # Sonarr removed it after a successful import.
+                                    still_in_queue = arr_client.check_queue_for_download(download_client_id)
+                                    if not still_in_queue:
+                                        already_imported = True
+                                        logger.info(
+                                            "IMPORT success_via_queue_absence torrent_id=%s download_id=%s "
+                                            "(scan unsuccessful but item no longer in Sonarr queue)",
+                                            job_id, download_client_id,
+                                        )
                                 if already_imported:
                                     self.store.merge(job_id, {
                                         "status": "imported",
@@ -285,7 +297,7 @@ class JobPoller:
                                         "arr_scan_command": command,
                                     })
                                     logger.info(
-                                        "IMPORT success_via_history torrent_id=%s (scan result=unsuccessful but history confirms import)",
+                                        "IMPORT success_via_history torrent_id=%s (scan result=unsuccessful but confirmed imported)",
                                         job_id,
                                     )
                                 else:
