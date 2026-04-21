@@ -41,7 +41,7 @@ from app.models import (
 )
 from app.poller import JobPoller
 from app.rd_client import RealDebridClient
-from app.staging import cleanup_staging_for_job
+from app.staging import cleanup_staging_for_job, extract_episode_token
 from app.webdav import build_multistatus, find_entry, normalize_subpath
 
 logging.basicConfig(
@@ -277,12 +277,51 @@ def _finalize_job(
             "deleted_at": None,
         },
     )
+
+    # Detect TorBox dedup mismatch at add time: if the provider returned a
+    # different episode than what was requested, fail immediately so Sonarr
+    # sees an error state and triggers a new search with a different release.
+    provider_fn = info.get("filename") or ""
+    req_ep = extract_episode_token(original_filename)
+    got_ep = extract_episode_token(provider_fn)
+    if req_ep and got_ep and req_ep != got_ep:
+        mismatch_reason = (
+            f"TorBox dedup mismatch: requested {req_ep} but TorBox returned {got_ep} "
+            f"({provider_fn}). This magnet hash is cached as a different episode. "
+            f"Sonarr should retry with a different release."
+        )
+        logger.error(
+            "ADD dedup_mismatch torrent_id=%s requested=%s got=%s provider=%s",
+            job_id, req_ep, got_ep, provider_fn,
+        )
+        job = store.merge(job_id, {
+            "status": "failed",
+            "last_error": mismatch_reason,
+            "polling_disabled": True,
+        })
+
     return job_id, job
 
 
 def _add_magnet_job(magnet_uri: str, category: str, *, raise_on_error: bool = False) -> tuple[str, dict]:
     display_name = magnet_display_name(magnet_uri)
     client_hash = magnet_info_hash(magnet_uri)
+
+    # Block re-adds of hashes that previously caused a dedup mismatch.
+    # Raising here causes the qBit /torrents/add endpoint to return an error,
+    # which makes Sonarr mark this release as failed/blacklisted and search for
+    # a different one — instead of looping forever on the same bad hash.
+    if client_hash:
+        existing = store.get(client_hash.lower())
+        if existing and existing.get("status") == "failed" and existing.get("polling_disabled"):
+            last_error = existing.get("last_error") or ""
+            if "dedup mismatch" in last_error:
+                logger.error(
+                    "ADD blocked known dedup_mismatch hash=%s error=%s",
+                    client_hash, last_error,
+                )
+                raise RuntimeError(f"Blocked: {last_error}")
+
     temp_id = _create_placeholder_job(display_name, category, "magnet", magnet_uri, preferred_id=client_hash)
     logger.info("ADD start type=magnet temp_id=%s name=%s category=%s", temp_id, display_name, category)
 
