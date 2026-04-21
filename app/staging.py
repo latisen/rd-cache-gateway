@@ -249,12 +249,7 @@ def _refresh_symlink(link_path: Path, source_file: Path) -> Path:
     if link_path.exists() or link_path.is_symlink():
         link_path.unlink()
 
-    try:
-        link_target = os.path.relpath(str(source_file), start=str(link_path.parent))
-    except Exception:
-        link_target = str(source_file)
-
-    link_path.symlink_to(link_target, target_is_directory=False)
+    link_path.symlink_to(str(source_file.resolve()), target_is_directory=False)
     return link_path
 
 
