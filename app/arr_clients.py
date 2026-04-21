@@ -158,20 +158,23 @@ class ArrClient:
             return 0
         try:
             # Step 1: ask Sonarr to parse the folder and return import candidates.
+            # Do NOT pass downloadId in the GET — some Sonarr versions filter out
+            # candidates that aren't already linked to that download ID, returning
+            # an empty list when the linkage doesn't exist yet.
             resp = requests.get(
                 f"{self.base_url}/api/v3/manualimport",
                 headers={"X-Api-Key": str(self.api_key)},
                 params={
                     "folder": str(folder),
-                    "downloadId": download_id,
                     "filterExistingFiles": "false",
                 },
                 timeout=30,
             )
             resp.raise_for_status()
-            candidates: list[dict] = resp.json() if isinstance(resp.json(), list) else []
+            raw = resp.json()
+            candidates: list[dict] = raw if isinstance(raw, list) else []
             if not candidates:
-                logger.info(
+                logger.warning(
                     "ARR manual_import no_candidates client=%s folder=%s download_id=%s",
                     self.name, folder, download_id,
                 )
